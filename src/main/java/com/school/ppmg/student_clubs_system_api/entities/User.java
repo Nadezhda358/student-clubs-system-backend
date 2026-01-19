@@ -53,4 +53,8 @@ public class User extends AuditableEntity {
     @Size(max = 20)
     @Column(name = "class_name", length = 20)
     private String className;
+
+    @OneToMany(mappedBy = "teacher", fetch = FetchType.LAZY)
+    private java.util.Set<ClubTeacher> leadingClubs = new java.util.HashSet<>();
+
 }
