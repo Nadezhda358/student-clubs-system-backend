@@ -1,4 +1,4 @@
-package com.school.ppmg.student_clubs_system_api.entities;
+package com.school.ppmg.student_clubs_system_api.entities.event;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
@@ -14,16 +14,16 @@ import java.io.Serializable;
 @NoArgsConstructor
 @EqualsAndHashCode
 @Embeddable
-public class ClubMembershipId implements Serializable {
+public class EventRegistrationId implements Serializable {
 
-    @Column(name = "club_id", nullable = false)
-    private Long clubId;
+    @Column(name = "event_id", nullable = false)
+    private Long eventId;
 
     @Column(name = "student_user_id", nullable = false)
     private Long studentUserId;
 
-    public ClubMembershipId(Long clubId, Long studentUserId) {
-        this.clubId = clubId;
+    public EventRegistrationId(Long eventId, Long studentUserId) {
+        this.eventId = eventId;
         this.studentUserId = studentUserId;
     }
 }

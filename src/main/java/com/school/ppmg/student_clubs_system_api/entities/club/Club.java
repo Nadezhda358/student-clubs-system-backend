@@ -1,5 +1,7 @@
-package com.school.ppmg.student_clubs_system_api.entities;
+package com.school.ppmg.student_clubs_system_api.entities.club;
 
+import com.school.ppmg.student_clubs_system_api.entities.base.AuditableEntity;
+import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
@@ -49,7 +51,7 @@ public class Club extends AuditableEntity {
 
     @Email
     @Size(max = 255)
-    @Column(name = "contact_email", length = 255)
+    @Column(name = "contact_email")
     private String contactEmail;
 
     @Size(max = 40)

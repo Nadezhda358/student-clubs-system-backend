@@ -1,5 +1,7 @@
-package com.school.ppmg.student_clubs_system_api.entities;
+package com.school.ppmg.student_clubs_system_api.entities.club;
 
+import com.school.ppmg.student_clubs_system_api.entities.base.AuditableEntity;
+import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;

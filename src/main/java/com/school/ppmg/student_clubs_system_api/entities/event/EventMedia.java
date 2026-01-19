@@ -1,5 +1,6 @@
-package com.school.ppmg.student_clubs_system_api.entities;
+package com.school.ppmg.student_clubs_system_api.entities.event;
 
+import com.school.ppmg.student_clubs_system_api.entities.base.AuditableEntity;
 import com.school.ppmg.student_clubs_system_api.enums.MediaType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
@@ -47,7 +48,6 @@ public class EventMedia extends AuditableEntity {
     private String url;
 
     @Size(max = 255)
-    @Column(length = 255)
     private String caption;
 
     @NotNull

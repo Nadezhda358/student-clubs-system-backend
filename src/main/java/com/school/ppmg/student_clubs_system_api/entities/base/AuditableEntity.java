@@ -1,4 +1,4 @@
-package com.school.ppmg.student_clubs_system_api.entities;
+package com.school.ppmg.student_clubs_system_api.entities.base;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
