@@ -1,4 +1,4 @@
-package com.school.ppmg.student_clubs_system_api.dtos.membership;
+package com.school.ppmg.student_clubs_system_api.dtos.club;
 
 import com.school.ppmg.student_clubs_system_api.dtos.user.UserSummaryDto;
 import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
