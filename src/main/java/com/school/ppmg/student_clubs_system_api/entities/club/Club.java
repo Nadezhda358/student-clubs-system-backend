@@ -9,6 +9,9 @@ import lombok.Setter;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Getter
 @Setter
 @Entity
@@ -73,6 +76,8 @@ public class Club extends AuditableEntity {
     private User createdBy;
 
     @OneToMany(mappedBy = "club", fetch = FetchType.LAZY)
-    private java.util.Set<ClubTeacher> teachers = new java.util.HashSet<>();
+    private Set<ClubTeacher> teachers = new HashSet<>();
 
+    @OneToMany(mappedBy = "club", fetch = FetchType.LAZY)
+    private Set<ClubMedia> media = new HashSet<>();
 }
