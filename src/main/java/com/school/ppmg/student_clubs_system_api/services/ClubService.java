@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -21,6 +22,7 @@ public class ClubService {
 
     private final ClubRepository clubRepository;
     private final UserRepository userRepository;
+    private final S3StorageService s3StorageService;
 
     @Transactional(readOnly = true)
     public Page<ClubListDto> getAll(Boolean active, Pageable pageable) {
@@ -78,6 +80,16 @@ public class ClubService {
         clubRepository.deleteById(id);
     }
 
+    @Transactional
+    public ClubDto updateMainImage(Long id, MultipartFile file) {
+        Club club = clubRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+
+        String url = s3StorageService.upload(file, "clubs/" + id + "/main-image");
+        club.setMainImageUrl(url);
+        return toDto(clubRepository.save(club));
+    }
+
     private void applyUpsert(Club club, UpsertClubDto dto) {
         club.setName(dto.name());
         club.setDescription(dto.description());
@@ -89,7 +101,7 @@ public class ClubService {
     }
 
     private ClubListDto toListDto(Club c) {
-        return new ClubListDto(c.getId(), c.getName(), c.getRoom(), c.getIsActive());
+        return new ClubListDto(c.getId(), c.getName(), c.getRoom(), c.getIsActive(), c.getMainImageUrl());
     }
 
     private ClubDto toDto(Club c) {
@@ -118,6 +130,7 @@ public class ClubService {
                 c.getRoom(),
                 c.getContactEmail(),
                 c.getContactPhone(),
+                c.getMainImageUrl(),
                 c.getIsActive(),
                 c.getCreatedBy() != null ? c.getCreatedBy().getId() : null,
                 c.getCreatedAt(),
