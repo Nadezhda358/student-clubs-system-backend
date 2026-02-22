@@ -61,6 +61,10 @@ public class Club extends AuditableEntity {
     @Column(name = "contact_phone", length = 40)
     private String contactPhone;
 
+    @Size(max = 2048)
+    @Column(name = "main_image_url", length = 2048)
+    private String mainImageUrl;
+
     @NotNull
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
