@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin")
@@ -21,7 +23,10 @@ public class AdminTeacherInviteController {
 
     @PostMapping("/teacher-invites")
     @ResponseStatus(HttpStatus.CREATED)
-    public TeacherInviteResponse createInvite(@Valid @RequestBody TeacherInviteRequest request) {
-        return teacherInviteService.createInvite(request);
+    public List<TeacherInviteResponse> createInvites(
+            @Valid @RequestBody TeacherInviteRequest request
+    ) {
+        return teacherInviteService.createInvites(request);
     }
+
 }

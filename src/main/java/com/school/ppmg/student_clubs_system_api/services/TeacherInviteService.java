@@ -16,6 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -30,27 +32,49 @@ public class TeacherInviteService {
     private String inviteBaseUrl;
 
     @Transactional
-    public TeacherInviteResponse createInvite(TeacherInviteRequest request) {
-        String email = request.email().trim();
-        if (userRepository.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+    public List<TeacherInviteResponse> createInvites(TeacherInviteRequest request) {
+
+        List<TeacherInviteResponse> responses = new ArrayList<>();
+
+        for (String rawEmail : request.emails()) {
+            String email = rawEmail.trim().toLowerCase();
+
+            if (userRepository.existsByEmail(email)) {
+                continue;
+            }
+
+            String token = tokenService.generateToken();
+            String tokenHash = tokenService.hashToken(token);
+
+            TeacherInvite invite = new TeacherInvite();
+            invite.setEmail(email);
+            invite.setTokenHash(tokenHash);
+            invite.setExpiresAt(OffsetDateTime.now().plusHours(48));
+
+            TeacherInvite saved = teacherInviteRepository.save(invite);
+
+            String inviteLink = buildInviteLink(token);
+            emailSender.sendTeacherInvite(email, inviteLink);
+
+            responses.add(
+                    new TeacherInviteResponse(
+                            saved.getId(),
+                            saved.getEmail(),
+                            saved.getExpiresAt()
+                    )
+            );
         }
 
-        String token = tokenService.generateToken();
-        String tokenHash = tokenService.hashToken(token);
+        if (responses.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No invites were created"
+            );
+        }
 
-        TeacherInvite invite = new TeacherInvite();
-        invite.setEmail(email);
-        invite.setTokenHash(tokenHash);
-        invite.setExpiresAt(OffsetDateTime.now().plusHours(48));
-
-        TeacherInvite saved = teacherInviteRepository.save(invite);
-
-        String inviteLink = buildInviteLink(token);
-        emailSender.sendTeacherInvite(email, inviteLink);
-
-        return new TeacherInviteResponse(saved.getId(), saved.getEmail(), saved.getExpiresAt());
+        return responses;
     }
+
 
     private String buildInviteLink(String token) {
         String encoded = URLEncoder.encode(token, StandardCharsets.UTF_8);
