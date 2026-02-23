@@ -24,9 +24,37 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/api/admin/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/clubs/**", "/api/events/**", "/api/announcements/**").permitAll()
-                        //.requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // Auth endpoints
+                        .requestMatchers("/api/auth/**").permitAll()
+
+                        // Public GET endpoints
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/clubs/**",
+                                "/api/events/**",
+                                "/api/announcements/**"
+                        ).permitAll()
+
+                        // Club creation - ADMIN only
+                        .requestMatchers(HttpMethod.POST, "/api/clubs")
+                        .hasRole("ADMIN")
+
+                        // Club update - ADMIN or TEACHER
+                        .requestMatchers(HttpMethod.PUT, "/api/clubs/**")
+                        .hasAnyRole("ADMIN", "TEACHER")
+
+                        // Club delete - ADMIN only
+                        .requestMatchers(HttpMethod.DELETE, "/api/clubs/**")
+                        .hasRole("ADMIN")
+
+                        // Upload main image - ADMIN or TEACHER
+                        .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
+                        .hasAnyRole("ADMIN", "TEACHER")
+
+                        // Admin endpoints
+                        .requestMatchers("/api/admin/**")
+                        .hasRole("ADMIN")
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
