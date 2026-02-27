@@ -17,10 +17,23 @@ public interface ClubMembershipRequestRepository extends JpaRepository<ClubMembe
             MembershipRequestStatus status
     );
 
+    boolean existsByClub_IdAndStudent_IdAndStatus(
+            Long clubId,
+            Long studentId,
+            MembershipRequestStatus status
+    );
+
     List<ClubMembershipRequest> findByClubIdAndStatus(
             Long clubId,
             MembershipRequestStatus status
     );
 
     List<ClubMembershipRequest> findByStudentId(Long studentId);
+
+    List<ClubMembershipRequest> findAllByStudent_IdOrderByCreatedAtDesc(Long studentId);
+
+    List<ClubMembershipRequest> findAllByStudent_IdAndStatusOrderByCreatedAtDesc(
+            Long studentId,
+            MembershipRequestStatus status
+    );
 }
