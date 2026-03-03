@@ -10,7 +10,6 @@ import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,21 +53,25 @@ public class ClubMembershipRequestService {
             );
         }
 
+        boolean approvedExists = clubMembershipRequestRepository.existsByClub_IdAndStudent_IdAndStatus(
+                clubId,
+                currentUser.getId(),
+                MembershipRequestStatus.APPROVED
+        );
+        if (approvedExists) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "You are already an approved member of this club"
+            );
+        }
+
         ClubMembershipRequest application = new ClubMembershipRequest();
         application.setClub(club);
         application.setStudent(currentUser);
         application.setStatus(MembershipRequestStatus.PENDING);
         application.setMessage(request.motivationText());
 
-        try {
-            return toDto(clubMembershipRequestRepository.save(application));
-        } catch (DataIntegrityViolationException ex) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Pending membership application already exists for this club",
-                    ex
-            );
-        }
+        return toDto(clubMembershipRequestRepository.save(application));
     }
 
     @Transactional(readOnly = true)

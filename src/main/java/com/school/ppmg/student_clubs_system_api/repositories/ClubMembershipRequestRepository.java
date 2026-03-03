@@ -11,7 +11,10 @@ import java.util.Optional;
 
 public interface ClubMembershipRequestRepository extends JpaRepository<ClubMembershipRequest, Long> {
 
-    Optional<ClubMembershipRequest> findByStudentIdAndClubId(Long studentId, Long clubId);
+    Optional<ClubMembershipRequest> findTopByStudent_IdAndClub_IdOrderByCreatedAtDesc(
+            Long studentId,
+            Long clubId
+    );
 
     boolean existsByStudentIdAndClubIdAndStatus(
             Long studentId,

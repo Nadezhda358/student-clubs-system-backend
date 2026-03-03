@@ -17,13 +17,6 @@ import java.time.OffsetDateTime;
 @Entity
 @Table(
         name = "club_membership_requests",
-        uniqueConstraints = {
-                // MariaDB няма partial unique index, затова: 1 заявка за даден статус
-                @UniqueConstraint(
-                        name = "uq_cmr_club_student_status",
-                        columnNames = {"club_id", "student_user_id", "status"}
-                )
-        },
         indexes = {
                 @Index(name = "ix_cmr_club_status", columnList = "club_id, status"),
                 @Index(name = "ix_cmr_student_status", columnList = "student_user_id, status"),
@@ -65,7 +58,6 @@ public class ClubMembershipRequest extends AuditableEntity {
     @Column(length = 2000)
     private String message;
 
-    // кой е одобрил/отказал (teacher/admin)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "decided_by",
