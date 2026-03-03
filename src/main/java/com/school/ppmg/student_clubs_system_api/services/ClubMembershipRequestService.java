@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Service
@@ -87,6 +88,46 @@ public class ClubMembershipRequestService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<MembershipApplicationDto> adminGetAll(
+            MembershipRequestStatus status,
+            Long clubId,
+            String q
+    ) {
+        String normalizedQuery = (q == null || q.isBlank()) ? null : q.trim();
+
+        return clubMembershipRequestRepository.findAllForAdmin(status, clubId, normalizedQuery).stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    @Transactional
+    public MembershipApplicationDto adminUpdateStatus(Long id, MembershipRequestStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+
+        if (newStatus != MembershipRequestStatus.APPROVED && newStatus != MembershipRequestStatus.REJECTED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be APPROVED or REJECTED");
+        }
+
+        ClubMembershipRequest application = clubMembershipRequestRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Membership application with id=" + id + " not found"
+                ));
+
+        if (application.getStatus() != MembershipRequestStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Membership application is already decided");
+        }
+
+        application.setStatus(newStatus);
+        application.setDecidedBy(authService.getCurrentUser());
+        application.setDecidedAt(OffsetDateTime.now());
+
+        return toDto(clubMembershipRequestRepository.save(application));
+    }
+
     private void requireStudent(User user) {
         if (user.getRole() != UserRole.STUDENT) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can manage membership applications");
@@ -99,6 +140,8 @@ public class ClubMembershipRequestService {
                 application.getClub().getId(),
                 application.getClub().getName(),
                 application.getStudent().getId(),
+                application.getStudent().getFirstName() + " " + application.getStudent().getLastName(),
+                application.getStudent().getEmail(),
                 application.getStatus(),
                 application.getMessage(),
                 application.getCreatedAt()

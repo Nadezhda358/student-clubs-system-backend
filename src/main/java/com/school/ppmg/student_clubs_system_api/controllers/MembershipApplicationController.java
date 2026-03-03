@@ -2,6 +2,7 @@ package com.school.ppmg.student_clubs_system_api.controllers;
 
 import com.school.ppmg.student_clubs_system_api.dtos.club.CreateMembershipApplicationRequest;
 import com.school.ppmg.student_clubs_system_api.dtos.club.MembershipApplicationDto;
+import com.school.ppmg.student_clubs_system_api.dtos.club.UpdateMembershipApplicationStatusRequest;
 import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
 import com.school.ppmg.student_clubs_system_api.services.ClubMembershipRequestService;
 import jakarta.validation.Valid;
@@ -35,5 +36,24 @@ public class MembershipApplicationController {
             @RequestParam(required = false) MembershipRequestStatus status
     ) {
         return clubMembershipRequestService.getMyApplications(status);
+    }
+
+    @GetMapping("/admin/membership-applications")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<MembershipApplicationDto> adminGetAllApplications(
+            @RequestParam(required = false) MembershipRequestStatus status,
+            @RequestParam(required = false) Long clubId,
+            @RequestParam(required = false) String q
+    ) {
+        return clubMembershipRequestService.adminGetAll(status, clubId, q);
+    }
+
+    @PostMapping("/admin/membership-applications/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public MembershipApplicationDto adminUpdateApplicationStatus(
+            @PathVariable Long id,
+            @RequestBody UpdateMembershipApplicationStatusRequest request
+    ) {
+        return clubMembershipRequestService.adminUpdateStatus(id, request == null ? null : request.status());
     }
 }
