@@ -1,10 +1,12 @@
 package com.school.ppmg.student_clubs_system_api.config;
 
 import com.school.ppmg.student_clubs_system_api.security.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -13,6 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -23,10 +26,41 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
+                ))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/api/admin/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/clubs/**", "/api/events/**", "/api/announcements/**").permitAll()
-                        //.requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // Auth endpoints
+                        .requestMatchers("/api/auth/**").permitAll()
+
+                        // Public GET endpoints
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/clubs/**",
+                                "/api/events/**",
+                                "/api/announcements/**"
+                        ).permitAll()
+
+                        // Club creation - ADMIN only
+                        .requestMatchers(HttpMethod.POST, "/api/clubs")
+                        .hasRole("ADMIN")
+
+                        // Club update - ADMIN or TEACHER
+                        .requestMatchers(HttpMethod.PUT, "/api/clubs/**")
+                        .hasAnyRole("ADMIN", "TEACHER")
+
+                        // Club delete - ADMIN only
+                        .requestMatchers(HttpMethod.DELETE, "/api/clubs/**")
+                        .hasRole("ADMIN")
+
+                        // Upload main image - ADMIN or TEACHER
+                        .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
+                        .hasAnyRole("ADMIN", "TEACHER")
+
+                        // Admin endpoints
+                        .requestMatchers("/api/admin/**")
+                        .hasRole("ADMIN")
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

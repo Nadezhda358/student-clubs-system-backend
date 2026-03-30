@@ -15,6 +15,9 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -112,6 +115,30 @@ public class S3StorageService {
                 .bucket(bucket)
                 .key(key)
                 .build());
+    }
+
+    public void deleteByUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+
+        try {
+            URI uri = URI.create(url);
+            String path = uri.getPath();
+            if (path == null || path.isBlank()) {
+                return;
+            }
+
+            String key = path.startsWith("/") ? path.substring(1) : path;
+            String bucketPrefix = bucket + "/";
+            if (key.startsWith(bucketPrefix)) {
+                key = key.substring(bucketPrefix.length());
+            }
+
+            delete(URLDecoder.decode(key, StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException ignored) {
+            // Ignore malformed URLs during best-effort cleanup.
+        }
     }
 
     private static String normalizePrefix(String keyPrefix) {
