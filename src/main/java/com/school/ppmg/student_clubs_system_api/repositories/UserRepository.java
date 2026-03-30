@@ -4,6 +4,7 @@ import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -13,4 +14,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 
     long countByRole(UserRole role);
+
+    List<User> findAllByRoleOrderByFirstNameAscLastNameAscIdAsc(UserRole role);
 }
