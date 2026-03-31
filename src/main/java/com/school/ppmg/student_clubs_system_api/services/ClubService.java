@@ -3,16 +3,19 @@ package com.school.ppmg.student_clubs_system_api.services;
 import com.school.ppmg.student_clubs_system_api.dtos.club.*;
 import com.school.ppmg.student_clubs_system_api.entities.club.Club;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
-import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
+import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import com.school.ppmg.student_clubs_system_api.exceptions.ConflictException;
+import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
-import com.school.ppmg.student_clubs_system_api.repositories.UserRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -21,7 +24,8 @@ import java.util.List;
 public class ClubService {
 
     private final ClubRepository clubRepository;
-    private final UserRepository userRepository;
+    private final ClubTeacherRepository clubTeacherRepository;
+    private final AuthService authService;
     private final S3StorageService s3StorageService;
 
     @Transactional(readOnly = true)
@@ -34,10 +38,24 @@ public class ClubService {
     }
 
     @Transactional(readOnly = true)
+    public Page<ClubListDto> getManagedClubs(Boolean active, Pageable pageable) {
+        User teacher = getCurrentTeacher();
+
+        Page<Club> page = active == null
+                ? clubRepository.findDistinctByTeachers_Teacher_Id(teacher.getId(), pageable)
+                : clubRepository.findDistinctByTeachers_Teacher_IdAndIsActive(teacher.getId(), active, pageable);
+
+        return page.map(this::toListDto);
+    }
+
+    @Transactional(readOnly = true)
     public ClubDto getById(Long id) {
-        Club club = clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
-        return toDto(club);
+        return toDto(getClubOrThrow(id));
+    }
+
+    @Transactional(readOnly = true)
+    public ClubDto getManagedById(Long id) {
+        return toDto(getManagedClubOrThrow(id));
     }
 
     @Transactional
@@ -46,51 +64,82 @@ public class ClubService {
             throw new ConflictException("Club name already exists: " + dto.name());
         }
 
-        if (dto.createdById() == null) {
-            throw new ConflictException("createdById is required");
-        }
-
-        User createdBy = userRepository.findById(dto.createdById())
-                .orElseThrow(() -> new ResourceNotFoundException("User with id=" + dto.createdById() + " not found"));
-
         Club club = new Club();
         applyUpsert(club, dto);
-        club.setCreatedBy(createdBy);
+        club.setCreatedBy(authService.getCurrentUser());
         return toDto(clubRepository.save(club));
     }
 
     @Transactional
     public ClubDto update(Long id, UpsertClubDto dto) {
-        Club club = clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+        return updateClub(getClubOrThrow(id), dto);
+    }
 
-        if (!club.getName().equals(dto.name()) && clubRepository.existsByName(dto.name())) {
-            throw new ConflictException("Club name already exists: " + dto.name());
-        }
-
-        applyUpsert(club, dto);
-        return toDto(clubRepository.save(club));
+    @Transactional
+    public ClubDto updateManagedClub(Long id, ManageClubDto dto) {
+        return updateClub(getManagedClubOrThrow(id), dto);
     }
 
     @Transactional
     public void delete(Long id) {
-        if (!clubRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Club with id=" + id + " not found");
-        }
-        clubRepository.deleteById(id);
+        clubRepository.delete(getClubOrThrow(id));
     }
 
     @Transactional
     public ClubDto updateMainImage(Long id, MultipartFile file) {
-        Club club = clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+        return updateClubMainImage(getClubOrThrow(id), file);
+    }
 
-        String url = s3StorageService.upload(file, "clubs/" + id + "/main-image");
+    @Transactional
+    public ClubDto updateManagedMainImage(Long id, MultipartFile file) {
+        return updateClubMainImage(getManagedClubOrThrow(id), file);
+    }
+
+    private ClubDto updateClub(Club club, ClubWriteRequest dto) {
+        ensureNameIsAvailable(dto.name(), club.getId());
+        applyUpsert(club, dto);
+        return toDto(clubRepository.save(club));
+    }
+
+    private ClubDto updateClubMainImage(Club club, MultipartFile file) {
+        String url = s3StorageService.upload(file, "clubs/" + club.getId() + "/main-image");
         club.setMainImageUrl(url);
         return toDto(clubRepository.save(club));
     }
 
-    private void applyUpsert(Club club, UpsertClubDto dto) {
+    private Club getClubOrThrow(Long id) {
+        return clubRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+    }
+
+    private Club getManagedClubOrThrow(Long id) {
+        Club club = getClubOrThrow(id);
+        User teacher = getCurrentTeacher();
+
+        if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(id, teacher.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+        }
+
+        return club;
+    }
+
+    private User getCurrentTeacher() {
+        User currentUser = authService.getCurrentUser();
+
+        if (currentUser.getRole() != UserRole.TEACHER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+        }
+
+        return currentUser;
+    }
+
+    private void ensureNameIsAvailable(String name, Long clubId) {
+        if (clubRepository.existsByNameAndIdNot(name, clubId)) {
+            throw new ConflictException("Club name already exists: " + name);
+        }
+    }
+
+    private void applyUpsert(Club club, ClubWriteRequest dto) {
         club.setName(dto.name());
         club.setDescription(dto.description());
         club.setScheduleText(dto.scheduleText());

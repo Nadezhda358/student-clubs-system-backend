@@ -39,17 +39,21 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/clubs")
                         .hasRole("ADMIN")
 
-                        // Club update - ADMIN or TEACHER
+                        // Club update - ADMIN only
                         .requestMatchers(HttpMethod.PUT, "/api/clubs/**")
-                        .hasAnyRole("ADMIN", "TEACHER")
+                        .hasRole("ADMIN")
 
                         // Club delete - ADMIN only
                         .requestMatchers(HttpMethod.DELETE, "/api/clubs/**")
                         .hasRole("ADMIN")
 
-                        // Upload main image - ADMIN or TEACHER
+                        // Upload main image - ADMIN only
                         .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
-                        .hasAnyRole("ADMIN", "TEACHER")
+                        .hasRole("ADMIN")
+
+                        // Teacher club management
+                        .requestMatchers("/api/teacher/clubs", "/api/teacher/clubs/**")
+                        .hasRole("TEACHER")
 
                         // Admin endpoints
                         .requestMatchers("/api/admin/**")
