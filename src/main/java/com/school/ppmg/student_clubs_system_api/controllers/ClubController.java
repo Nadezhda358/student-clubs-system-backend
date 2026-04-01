@@ -2,6 +2,8 @@ package com.school.ppmg.student_clubs_system_api.controllers;
 
 import com.school.ppmg.student_clubs_system_api.dtos.club.ClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.club.ClubListDto;
+import com.school.ppmg.student_clubs_system_api.dtos.club.CreateClubOptions;
+import com.school.ppmg.student_clubs_system_api.dtos.club.CreateClubRequest;
 import com.school.ppmg.student_clubs_system_api.dtos.club.UpsertClubDto;
 import com.school.ppmg.student_clubs_system_api.services.ClubService;
 import jakarta.validation.Valid;
@@ -33,10 +35,24 @@ public class ClubController {
         return clubService.getById(id);
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ClubDto create(@Valid @RequestBody UpsertClubDto dto) {
         return clubService.create(dto);
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ClubDto createMultipart(@Valid @ModelAttribute CreateClubRequest request) {
+        return clubService.create(
+                request.toUpsertDto(),
+                new CreateClubOptions(
+                        request.getTeacherId(),
+                        request.getTeacherIsPrimary(),
+                        request.getMainImage(),
+                        request.getMediaFiles()
+                )
+        );
     }
 
     @PutMapping("/{id}")
