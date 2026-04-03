@@ -48,6 +48,16 @@ public class MembershipApplicationController {
         return clubMembershipRequestService.adminGetAll(status, clubId, q);
     }
 
+    @GetMapping("/teacher/membership-applications")
+    @PreAuthorize("hasRole('TEACHER')")
+    public List<MembershipApplicationDto> teacherGetAllApplications(
+            @RequestParam(required = false) MembershipRequestStatus status,
+            @RequestParam(required = false) Long clubId,
+            @RequestParam(required = false) String q
+    ) {
+        return clubMembershipRequestService.teacherGetAll(status, clubId, q);
+    }
+
     @PostMapping("/admin/membership-applications/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public MembershipApplicationDto adminUpdateApplicationStatus(
@@ -55,5 +65,14 @@ public class MembershipApplicationController {
             @RequestBody UpdateMembershipApplicationStatusRequest request
     ) {
         return clubMembershipRequestService.adminUpdateStatus(id, request == null ? null : request.status());
+    }
+
+    @PostMapping("/teacher/membership-applications/{id}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public MembershipApplicationDto teacherUpdateApplicationStatus(
+            @PathVariable Long id,
+            @RequestBody UpdateMembershipApplicationStatusRequest request
+    ) {
+        return clubMembershipRequestService.teacherUpdateStatus(id, request == null ? null : request.status());
     }
 }

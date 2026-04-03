@@ -57,8 +57,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
                         .hasRole("ADMIN")
 
-                        // Teacher club management
-                        .requestMatchers("/api/teacher/clubs", "/api/teacher/clubs/**")
+                        // Teacher endpoints
+                        .requestMatchers("/api/teacher/**")
                         .hasRole("TEACHER")
 
                         // Admin endpoints

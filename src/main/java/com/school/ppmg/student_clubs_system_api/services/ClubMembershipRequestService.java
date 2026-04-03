@@ -9,6 +9,7 @@ import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
 import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class ClubMembershipRequestService {
 
     private final ClubRepository clubRepository;
     private final ClubMembershipRequestRepository clubMembershipRequestRepository;
+    private final ClubTeacherRepository clubTeacherRepository;
     private final AuthService authService;
 
     @Transactional
@@ -97,22 +99,76 @@ public class ClubMembershipRequestService {
             Long clubId,
             String q
     ) {
-        String normalizedQuery = (q == null || q.isBlank()) ? null : q.trim();
+        String normalizedQuery = normalizeQuery(q);
 
         return clubMembershipRequestRepository.findAllForAdmin(status, clubId, normalizedQuery).stream()
                 .map(this::toDto)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<MembershipApplicationDto> teacherGetAll(
+            MembershipRequestStatus status,
+            Long clubId,
+            String q
+    ) {
+        User teacher = getCurrentTeacher();
+        ensureTeacherCanManageClub(teacher, clubId);
+
+        return clubMembershipRequestRepository.findAllForTeacher(
+                        teacher.getId(),
+                        status,
+                        clubId,
+                        normalizeQuery(q)
+                ).stream()
+                .map(this::toDto)
+                .toList();
+    }
+
     @Transactional
     public MembershipApplicationDto adminUpdateStatus(Long id, MembershipRequestStatus newStatus) {
-        if (newStatus == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        return updateStatus(id, newStatus, authService.getCurrentUser());
+    }
+
+    @Transactional
+    public MembershipApplicationDto teacherUpdateStatus(Long id, MembershipRequestStatus newStatus) {
+        User teacher = getCurrentTeacher();
+        ClubMembershipRequest application = getPendingApplicationOrThrow(id, newStatus);
+        ensureTeacherCanManageClub(teacher, application.getClub().getId());
+        return finalizeStatusUpdate(application, newStatus, teacher);
+    }
+
+    private void requireStudent(User user) {
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can manage membership applications");
+        }
+    }
+
+    private User getCurrentTeacher() {
+        User currentUser = authService.getCurrentUser();
+        if (currentUser.getRole() != UserRole.TEACHER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+        }
+        return currentUser;
+    }
+
+    private void ensureTeacherCanManageClub(User teacher, Long clubId) {
+        if (clubId == null) {
+            return;
         }
 
-        if (newStatus != MembershipRequestStatus.APPROVED && newStatus != MembershipRequestStatus.REJECTED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be APPROVED or REJECTED");
+        if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacher.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
         }
+    }
+
+    private MembershipApplicationDto updateStatus(Long id, MembershipRequestStatus newStatus, User decidedBy) {
+        ClubMembershipRequest application = getPendingApplicationOrThrow(id, newStatus);
+        return finalizeStatusUpdate(application, newStatus, decidedBy);
+    }
+
+    private ClubMembershipRequest getPendingApplicationOrThrow(Long id, MembershipRequestStatus newStatus) {
+        validateNewStatus(newStatus);
 
         ClubMembershipRequest application = clubMembershipRequestRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -124,17 +180,33 @@ public class ClubMembershipRequestService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Membership application is already decided");
         }
 
+        return application;
+    }
+
+    private void validateNewStatus(MembershipRequestStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+
+        if (newStatus != MembershipRequestStatus.APPROVED && newStatus != MembershipRequestStatus.REJECTED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be APPROVED or REJECTED");
+        }
+    }
+
+    private MembershipApplicationDto finalizeStatusUpdate(
+            ClubMembershipRequest application,
+            MembershipRequestStatus newStatus,
+            User decidedBy
+    ) {
         application.setStatus(newStatus);
-        application.setDecidedBy(authService.getCurrentUser());
+        application.setDecidedBy(decidedBy);
         application.setDecidedAt(OffsetDateTime.now());
 
         return toDto(clubMembershipRequestRepository.save(application));
     }
 
-    private void requireStudent(User user) {
-        if (user.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can manage membership applications");
-        }
+    private String normalizeQuery(String q) {
+        return (q == null || q.isBlank()) ? null : q.trim();
     }
 
     private MembershipApplicationDto toDto(ClubMembershipRequest application) {
