@@ -3,6 +3,7 @@ package com.school.ppmg.student_clubs_system_api.entities.event;
 import com.school.ppmg.student_clubs_system_api.entities.base.AuditableEntity;
 import com.school.ppmg.student_clubs_system_api.entities.club.Club;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
+import com.school.ppmg.student_clubs_system_api.enums.EventAudience;
 import com.school.ppmg.student_clubs_system_api.enums.EventStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
@@ -75,6 +76,11 @@ public class Event extends AuditableEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private EventStatus status = EventStatus.DRAFT;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private EventAudience audience = EventAudience.ALL_STUDENTS;
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

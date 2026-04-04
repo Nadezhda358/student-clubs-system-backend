@@ -1,21 +1,13 @@
 package com.school.ppmg.student_clubs_system_api.repositories;
 
 import com.school.ppmg.student_clubs_system_api.entities.event.EventRegistration;
+import com.school.ppmg.student_clubs_system_api.entities.event.EventRegistrationId;
+import com.school.ppmg.student_clubs_system_api.enums.RegistrationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.util.List;
-import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface EventRegistrationRepository
-        extends JpaRepository<EventRegistration, Long> {
+        extends JpaRepository<EventRegistration, EventRegistrationId>, JpaSpecificationExecutor<EventRegistration> {
 
-    Optional<EventRegistration> findByStudentIdAndEventId(Long studentId, Long eventId);
-
-    boolean existsByStudentIdAndEventId(Long studentId, Long eventId);
-
-    List<EventRegistration> findByEventId(Long eventId);
-
-    List<EventRegistration> findByStudentId(Long studentId);
-
-    long countByEventId(Long eventId);
+    long countByEvent_IdAndStatus(Long eventId, RegistrationStatus status);
 }
