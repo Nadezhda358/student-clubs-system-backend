@@ -98,7 +98,7 @@ public class EventService {
                         normalizeQuery(q),
                         defaultUpcoming(timeFilter)
                 ),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "event.startAt"))
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
         );
 
         return page.map(this::toMyEventDto);
@@ -336,7 +336,7 @@ public class EventService {
                         normalizeQuery(q),
                         defaultAll(timeFilter)
                 ),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "event.startAt"))
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
         );
 
         return page.map(this::toParticipationDto);
@@ -373,7 +373,7 @@ public class EventService {
     ) {
         Page<EventRegistration> page = eventRegistrationRepository.findAll(
                 eventParticipantsSpecification(eventId, status, normalizeQuery(q)),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "registeredAt"))
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "registeredAt"))
         );
 
         return page.map(this::toParticipationDto);
@@ -902,6 +902,14 @@ public class EventService {
         }
 
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
+    }
+
+    private Pageable withFixedSort(Pageable pageable, Sort sort) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return pageable;
+        }
+
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
     private String normalizeQuery(String q) {
