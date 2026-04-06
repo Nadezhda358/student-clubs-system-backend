@@ -3,6 +3,7 @@ package com.school.ppmg.student_clubs_system_api.dtos.club;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -33,6 +34,10 @@ public class CreateClubRequest {
     @Size(max = 255)
     private String contactEmail;
 
+    @Pattern(
+            regexp = "^$|^(?=.*\\d)\\+?[\\d()\\s-]+$",
+            message = "contactPhone can contain only digits, spaces, parentheses, hyphens, and an optional leading +"
+    )
     @Size(max = 40)
     private String contactPhone;
 
