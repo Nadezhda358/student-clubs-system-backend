@@ -91,7 +91,7 @@ public class Event extends AuditableEntity {
     )
     private User createdBy;
 
-    @AssertTrue(message = "endAt must be after startAt")
+    @AssertTrue(message = "endAt must be on/after startAt")
     public boolean isEndAfterStart() {
         return endAt == null || startAt == null || !endAt.isBefore(startAt);
     }

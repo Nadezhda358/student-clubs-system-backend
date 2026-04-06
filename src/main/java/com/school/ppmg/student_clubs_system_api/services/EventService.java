@@ -62,6 +62,8 @@ public class EventService {
             EventTimeFilter timeFilter,
             Pageable pageable
     ) {
+        EventWriteValidator.validateSearchRange(from, to);
+
         Page<Event> page = eventRepository.findAll(
                 publicEventsSpecification(clubId, normalizeQuery(q), from, to, defaultUpcoming(timeFilter)),
                 withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
@@ -175,6 +177,7 @@ public class EventService {
     ) {
         User teacher = getCurrentTeacher();
         ensureTeacherCanManageFilteredClub(teacher, clubId);
+        EventWriteValidator.validateSearchRange(from, to);
 
         Page<Event> page = eventRepository.findAll(
                 teacherEventsSpecification(
@@ -202,6 +205,7 @@ public class EventService {
         User teacher = getCurrentTeacher();
         Club club = getClubOrThrow(dto.clubId());
         ensureTeacherCanManageClub(teacher, club.getId());
+        EventWriteValidator.validateForCreate(dto, OffsetDateTime.now());
 
         Event event = new Event();
         event.setCreatedBy(teacher);
@@ -216,6 +220,7 @@ public class EventService {
         Event event = getTeacherManagedEventOrThrow(id);
         Club club = getClubOrThrow(dto.clubId());
         ensureTeacherCanManageClub(teacher, club.getId());
+        EventWriteValidator.validateForUpdate(event, dto, OffsetDateTime.now());
 
         applyUpsert(event, dto, club);
         return toDto(eventRepository.save(event));
@@ -264,6 +269,7 @@ public class EventService {
             Pageable pageable
     ) {
         requireAdmin();
+        EventWriteValidator.validateSearchRange(from, to);
 
         Page<Event> page = eventRepository.findAll(
                 adminEventsSpecification(clubId, normalizeQuery(q), from, to, defaultAll(timeFilter), status),
@@ -283,6 +289,7 @@ public class EventService {
     public EventDto createAdminEvent(UpsertEventDto dto) {
         User admin = requireAdmin();
         Club club = getClubOrThrow(dto.clubId());
+        EventWriteValidator.validateForCreate(dto, OffsetDateTime.now());
 
         Event event = new Event();
         event.setCreatedBy(admin);
@@ -296,6 +303,7 @@ public class EventService {
         requireAdmin();
         Event event = getEventOrThrow(id);
         Club club = getClubOrThrow(dto.clubId());
+        EventWriteValidator.validateForUpdate(event, dto, OffsetDateTime.now());
 
         applyUpsert(event, dto, club);
         return toDto(eventRepository.save(event));
