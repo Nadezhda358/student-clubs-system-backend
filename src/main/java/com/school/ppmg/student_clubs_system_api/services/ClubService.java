@@ -27,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Service
@@ -79,18 +80,18 @@ public class ClubService {
     }
 
     @Transactional
-    public ClubDto create(UpsertClubDto dto) {
-        return create(dto, new CreateClubOptions(null, null, null, List.of()));
+    public ClubDto create(CreateClubDto dto) {
+        return create(dto, new CreateClubOptions(null, List.of()));
     }
 
     @Transactional
-    public ClubDto create(UpsertClubDto dto, CreateClubOptions options) {
+    public ClubDto create(CreateClubDto dto, CreateClubOptions options) {
         if (clubRepository.existsByName(dto.name())) {
             throw new ConflictException("Club name already exists: " + dto.name());
         }
 
         CreateClubOptions effectiveOptions = options == null
-                ? new CreateClubOptions(null, null, null, List.of())
+                ? new CreateClubOptions(null, List.of())
                 : options;
 
         Club club = new Club();
@@ -100,7 +101,7 @@ public class ClubService {
 
         List<String> uploadedUrls = new ArrayList<>();
         try {
-            attachTeacher(club, effectiveOptions.teacherId(), effectiveOptions.teacherIsPrimary());
+            attachTeachers(club, dto.teacherIds());
             uploadMainImage(club, effectiveOptions.mainImage(), uploadedUrls);
             saveClubMedia(club, effectiveOptions.mediaFiles(), uploadedUrls);
 
@@ -124,6 +125,37 @@ public class ClubService {
     @Transactional
     public void delete(Long id) {
         clubRepository.delete(getClubOrThrow(id));
+    }
+
+    @Transactional
+    public void addTeachers(Long clubId, List<Long> teacherIds) {
+        Club club = getClubOrThrow(clubId);
+
+        for (Long teacherId : normalizeTeacherIds(teacherIds)) {
+            User teacher = getTeacherOrThrow(teacherId);
+
+            if (clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacherId)) {
+                continue;
+            }
+
+            if (clubTeacherRepository.countAllByClubIdAndTeacherId(clubId, teacherId) > 0) {
+                clubTeacherRepository.restoreByClubIdAndTeacherId(clubId, teacherId);
+                continue;
+            }
+
+            createTeacherRelation(club, teacher);
+        }
+    }
+
+    @Transactional
+    public void removeTeacher(Long clubId, Long teacherId) {
+        getClubOrThrow(clubId);
+        if (teacherId == null) {
+            return;
+        }
+
+        clubTeacherRepository.findByClub_IdAndTeacher_Id(clubId, teacherId)
+                .ifPresent(clubTeacherRepository::delete);
     }
 
     @Transactional
@@ -204,12 +236,12 @@ public class ClubService {
         List<TeacherDto> teachers = club.getTeachers() == null ? List.of()
                 : club.getTeachers().stream()
                 .sorted(Comparator
-                        .comparing(ClubTeacher::getIsPrimary, Comparator.reverseOrder())
+                        .comparing((ClubTeacher clubTeacher) -> clubTeacher.getTeacher().getFirstName())
+                        .thenComparing(clubTeacher -> clubTeacher.getTeacher().getLastName())
                         .thenComparing(clubTeacher -> clubTeacher.getTeacher().getId()))
                 .map(teacher -> new TeacherDto(
                         teacher.getTeacher().getId(),
-                        teacher.getTeacher().getFirstName() + " " + teacher.getTeacher().getLastName(),
-                        teacher.getIsPrimary()
+                        teacher.getTeacher().getFirstName() + " " + teacher.getTeacher().getLastName()
                 ))
                 .toList();
 
@@ -243,17 +275,13 @@ public class ClubService {
         );
     }
 
-    private void attachTeacher(Club club, Long teacherId, Boolean teacherIsPrimary) {
-        if (teacherId == null) {
-            if (teacherIsPrimary != null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "teacherIsPrimary can only be provided when teacherId is set"
-                );
-            }
-            return;
+    private void attachTeachers(Club club, List<Long> teacherIds) {
+        for (Long teacherId : normalizeTeacherIds(teacherIds)) {
+            createTeacherRelation(club, getTeacherOrThrow(teacherId));
         }
+    }
 
+    private User getTeacherOrThrow(Long teacherId) {
         User teacher = userRepository.findById(teacherId)
                 .orElseThrow(() -> new ResourceNotFoundException("Teacher with id=" + teacherId + " not found"));
 
@@ -261,14 +289,25 @@ public class ClubService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User with id=" + teacherId + " is not a teacher");
         }
 
+        return teacher;
+    }
+
+    private void createTeacherRelation(Club club, User teacher) {
         ClubTeacher clubTeacher = new ClubTeacher();
         clubTeacher.setId(new ClubTeacherId(club.getId(), teacher.getId()));
         clubTeacher.setClub(club);
         clubTeacher.setTeacher(teacher);
-        clubTeacher.setIsPrimary(teacherIsPrimary == null ? Boolean.TRUE : teacherIsPrimary);
 
         clubTeacherRepository.save(clubTeacher);
         club.getTeachers().add(clubTeacher);
+    }
+
+    private List<Long> normalizeTeacherIds(List<Long> teacherIds) {
+        if (teacherIds == null || teacherIds.isEmpty()) {
+            return List.of();
+        }
+
+        return new ArrayList<>(new LinkedHashSet<>(teacherIds));
     }
 
     private void uploadMainImage(Club club, MultipartFile mainImage, List<String> uploadedUrls) {

@@ -45,8 +45,4 @@ public class ClubTeacher extends AuditableEntity {
             foreignKey = @ForeignKey(name = "fk_club_teachers_teacher_user")
     )
     private User teacher;
-
-    @NotNull
-    @Column(name = "is_primary", nullable = false)
-    private Boolean isPrimary = true;
 }
