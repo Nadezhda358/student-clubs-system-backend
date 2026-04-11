@@ -3,10 +3,14 @@ package com.school.ppmg.student_clubs_system_api.services;
 import com.school.ppmg.student_clubs_system_api.dtos.club.CreateMembershipApplicationRequest;
 import com.school.ppmg.student_clubs_system_api.dtos.club.MembershipApplicationDto;
 import com.school.ppmg.student_clubs_system_api.entities.club.Club;
+import com.school.ppmg.student_clubs_system_api.entities.club.ClubMembership;
+import com.school.ppmg.student_clubs_system_api.entities.club.ClubMembershipId;
 import com.school.ppmg.student_clubs_system_api.entities.club.ClubMembershipRequest;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
+import com.school.ppmg.student_clubs_system_api.enums.MembershipStatus;
 import com.school.ppmg.student_clubs_system_api.enums.UserRole;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
@@ -24,6 +28,7 @@ import java.util.List;
 public class ClubMembershipRequestService {
 
     private final ClubRepository clubRepository;
+    private final ClubMembershipRepository clubMembershipRepository;
     private final ClubMembershipRequestRepository clubMembershipRequestRepository;
     private final ClubTeacherRepository clubTeacherRepository;
     private final AuthService authService;
@@ -55,15 +60,27 @@ public class ClubMembershipRequestService {
             );
         }
 
-        boolean approvedExists = clubMembershipRequestRepository.existsByClub_IdAndStudent_IdAndStatus(
+        boolean activeMembershipExists = clubMembershipRepository.existsByClub_IdAndStudent_IdAndStatus(
                 clubId,
                 currentUser.getId(),
-                MembershipRequestStatus.APPROVED
+                MembershipStatus.ACTIVE
         );
-        if (approvedExists) {
+        if (activeMembershipExists) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "You are already an approved member of this club"
+                    "You are already an active member of this club"
+            );
+        }
+
+        boolean bannedMembershipExists = clubMembershipRepository.existsByClub_IdAndStudent_IdAndStatus(
+                clubId,
+                currentUser.getId(),
+                MembershipStatus.BANNED
+        );
+        if (bannedMembershipExists) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "You are banned from this club"
             );
         }
 
@@ -91,6 +108,29 @@ public class ClubMembershipRequestService {
         return applications.stream()
                 .map(this::toDto)
                 .toList();
+    }
+
+    @Transactional
+    public MembershipApplicationDto cancelMyApplication(Long id) {
+        User currentUser = authService.getCurrentUser();
+        requireStudent(currentUser);
+
+        ClubMembershipRequest application = clubMembershipRequestRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Membership application with id=" + id + " not found"
+                ));
+
+        if (!application.getStudent().getId().equals(currentUser.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can cancel only your own membership applications");
+        }
+
+        if (application.getStatus() != MembershipRequestStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only pending membership applications can be cancelled");
+        }
+
+        application.setStatus(MembershipRequestStatus.CANCELLED);
+        return toDto(clubMembershipRequestRepository.save(application));
     }
 
     @Transactional(readOnly = true)
@@ -170,7 +210,7 @@ public class ClubMembershipRequestService {
     private ClubMembershipRequest getPendingApplicationOrThrow(Long id, MembershipRequestStatus newStatus) {
         validateNewStatus(newStatus);
 
-        ClubMembershipRequest application = clubMembershipRequestRepository.findById(id)
+        ClubMembershipRequest application = clubMembershipRequestRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Membership application with id=" + id + " not found"
@@ -198,11 +238,73 @@ public class ClubMembershipRequestService {
             MembershipRequestStatus newStatus,
             User decidedBy
     ) {
+        OffsetDateTime decidedAt = OffsetDateTime.now();
         application.setStatus(newStatus);
         application.setDecidedBy(decidedBy);
-        application.setDecidedAt(OffsetDateTime.now());
+        application.setDecidedAt(decidedAt);
+
+        if (newStatus == MembershipRequestStatus.APPROVED) {
+            activateClubMembership(application, decidedAt);
+        }
 
         return toDto(clubMembershipRequestRepository.save(application));
+    }
+
+    private void activateClubMembership(ClubMembershipRequest application, OffsetDateTime approvedAt) {
+        Long clubId = application.getClub().getId();
+        Long studentId = application.getStudent().getId();
+
+        MembershipActivation activation = resolveMembershipForActivation(application, clubId, studentId);
+        ClubMembership membership = activation.membership();
+
+        if (membership.getStatus() == MembershipStatus.BANNED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Banned memberships cannot be approved via membership applications"
+            );
+        }
+
+        boolean shouldRefreshJoinedAt = activation.restored()
+                || membership.getStatus() != MembershipStatus.ACTIVE
+                || membership.getLeftAt() != null
+                || membership.getJoinedAt() == null;
+
+        membership.setStatus(MembershipStatus.ACTIVE);
+        membership.setLeftAt(null);
+        if (shouldRefreshJoinedAt) {
+            membership.setJoinedAt(approvedAt);
+        }
+
+        clubMembershipRepository.save(membership);
+    }
+
+    private MembershipActivation resolveMembershipForActivation(
+            ClubMembershipRequest application,
+            Long clubId,
+            Long studentId
+    ) {
+        ClubMembership existingMembership = clubMembershipRepository.findByStudent_IdAndClub_Id(studentId, clubId)
+                .orElse(null);
+        if (existingMembership != null) {
+            return new MembershipActivation(existingMembership, false);
+        }
+
+        if (clubMembershipRepository.countAllByClubIdAndStudentId(clubId, studentId) > 0) {
+            clubMembershipRepository.restoreByClubIdAndStudentId(clubId, studentId);
+
+            ClubMembership restoredMembership = clubMembershipRepository.findByStudent_IdAndClub_Id(studentId, clubId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Membership restore failed for club id=" + clubId + " and student id=" + studentId
+                    ));
+
+            return new MembershipActivation(restoredMembership, true);
+        }
+
+        ClubMembership membership = new ClubMembership();
+        membership.setId(new ClubMembershipId(clubId, studentId));
+        membership.setClub(application.getClub());
+        membership.setStudent(application.getStudent());
+        return new MembershipActivation(membership, false);
     }
 
     private String normalizeQuery(String q) {
@@ -221,5 +323,8 @@ public class ClubMembershipRequestService {
                 application.getMessage(),
                 application.getCreatedAt()
         );
+    }
+
+    private record MembershipActivation(ClubMembership membership, boolean restored) {
     }
 }

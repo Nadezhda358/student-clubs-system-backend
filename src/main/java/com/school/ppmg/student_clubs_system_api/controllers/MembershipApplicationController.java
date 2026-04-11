@@ -38,6 +38,12 @@ public class MembershipApplicationController {
         return clubMembershipRequestService.getMyApplications(status);
     }
 
+    @PostMapping("/me/membership-applications/{id}/cancel")
+    @PreAuthorize("hasRole('STUDENT')")
+    public MembershipApplicationDto cancelMyApplication(@PathVariable Long id) {
+        return clubMembershipRequestService.cancelMyApplication(id);
+    }
+
     @GetMapping("/admin/membership-applications")
     @PreAuthorize("hasRole('ADMIN')")
     public List<MembershipApplicationDto> adminGetAllApplications(

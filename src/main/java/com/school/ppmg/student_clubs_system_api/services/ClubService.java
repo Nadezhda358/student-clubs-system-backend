@@ -11,8 +11,10 @@ import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import com.school.ppmg.student_clubs_system_api.exceptions.ConflictException;
 import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMediaRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.EventRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -37,6 +40,8 @@ public class ClubService {
     private final ClubRepository clubRepository;
     private final ClubTeacherRepository clubTeacherRepository;
     private final ClubMediaRepository clubMediaRepository;
+    private final ClubMembershipRepository clubMembershipRepository;
+    private final EventRepository eventRepository;
     private final UserRepository userRepository;
     private final AuthService authService;
     private final S3StorageService s3StorageService;
@@ -124,7 +129,11 @@ public class ClubService {
 
     @Transactional
     public void delete(Long id) {
-        clubRepository.delete(getClubOrThrow(id));
+        Club club = getClubOrThrow(id);
+        OffsetDateTime deletedAt = OffsetDateTime.now();
+        eventRepository.cancelFutureEventsForClub(club.getId(), deletedAt);
+        clubMembershipRepository.markActiveMembershipsAsLeftForClub(club.getId(), deletedAt);
+        clubRepository.delete(club);
     }
 
     @Transactional

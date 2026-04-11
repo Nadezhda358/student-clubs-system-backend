@@ -11,6 +11,18 @@ import java.util.Optional;
 
 public interface ClubMembershipRequestRepository extends JpaRepository<ClubMembershipRequest, Long> {
 
+    @Query(
+            value = """
+                    select *
+                    from club_membership_requests
+                    where id = :id
+                      and deleted_at is null
+                    for update
+                    """,
+            nativeQuery = true
+    )
+    Optional<ClubMembershipRequest> findByIdForUpdate(@Param("id") Long id);
+
     Optional<ClubMembershipRequest> findTopByStudent_IdAndClub_IdOrderByCreatedAtDesc(
             Long studentId,
             Long clubId
