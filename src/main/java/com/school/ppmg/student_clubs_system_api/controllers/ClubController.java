@@ -27,9 +27,10 @@ public class ClubController {
     @GetMapping
     public Page<ClubListDto> getAll(
             @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) String q,
             Pageable pageable
     ) {
-        return clubService.getAll(active, pageable);
+        return clubService.getAll(active, q, pageable);
     }
 
     @GetMapping("/{id}")

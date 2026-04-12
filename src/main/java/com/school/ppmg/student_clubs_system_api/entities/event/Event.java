@@ -64,6 +64,10 @@ public class Event extends AuditableEntity {
     @Column(length = 200)
     private String location;
 
+    @Size(max = 2048)
+    @Column(name = "main_image_url", length = 2048)
+    private String mainImageUrl;
+
     // NULL => unlimited
     @Min(0)
     @Column(name = "capacity")

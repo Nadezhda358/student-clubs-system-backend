@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.OffsetDateTime;
 
@@ -72,6 +74,14 @@ public class AdminEventController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAdminEvent(@PathVariable Long id) {
         eventService.deleteAdminEvent(id);
+    }
+
+    @PostMapping(value = "/events/{id}/main-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public EventDto uploadAdminEventMainImage(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return eventService.updateAdminMainImage(id, file);
     }
 
     @GetMapping("/events/{id}/participants")

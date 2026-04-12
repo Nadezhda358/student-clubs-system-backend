@@ -3,10 +3,11 @@ package com.school.ppmg.student_clubs_system_api.services;
 import com.school.ppmg.student_clubs_system_api.dtos.club.*;
 import com.school.ppmg.student_clubs_system_api.entities.club.Club;
 import com.school.ppmg.student_clubs_system_api.entities.club.ClubMedia;
+import com.school.ppmg.student_clubs_system_api.entities.club.ClubMembership;
 import com.school.ppmg.student_clubs_system_api.entities.club.ClubTeacher;
 import com.school.ppmg.student_clubs_system_api.entities.club.ClubTeacherId;
+import com.school.ppmg.student_clubs_system_api.enums.MembershipStatus;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
-import com.school.ppmg.student_clubs_system_api.enums.MediaType;
 import com.school.ppmg.student_clubs_system_api.enums.UserRole;
 import com.school.ppmg.student_clubs_system_api.exceptions.ConflictException;
 import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
@@ -18,7 +19,10 @@ import com.school.ppmg.student_clubs_system_api.repositories.EventRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.persistence.criteria.Predicate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -47,25 +52,38 @@ public class ClubService {
     private final S3StorageService s3StorageService;
 
     @Transactional(readOnly = true)
-    public Page<ClubListDto> getAll(Boolean active, Pageable pageable) {
+    public Page<ClubListDto> getAll(Boolean active, String q, Pageable pageable) {
         Boolean effectiveActive = canViewInactiveClubs() ? active : Boolean.TRUE;
-
-        Page<Club> page = effectiveActive == null
-                ? clubRepository.findAll(pageable)
-                : clubRepository.findAllByIsActive(effectiveActive, pageable);
+        Page<Club> page = clubRepository.findAll(
+                clubsSpecification(effectiveActive, normalizeQuery(q)),
+                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "name"))
+        );
 
         return page.map(this::toListDto);
     }
 
     @Transactional(readOnly = true)
-    public Page<ClubListDto> getManagedClubs(Boolean active, Pageable pageable) {
+    public Page<ClubListDto> getManagedClubs(Boolean active, String q, Pageable pageable) {
         User teacher = getCurrentTeacher();
-
-        Page<Club> page = active == null
-                ? clubRepository.findDistinctByTeachers_Teacher_Id(teacher.getId(), pageable)
-                : clubRepository.findDistinctByTeachers_Teacher_IdAndIsActive(teacher.getId(), active, pageable);
+        Page<Club> page = clubRepository.findAll(
+                managedClubsSpecification(teacher.getId(), active, normalizeQuery(q)),
+                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "name"))
+        );
 
         return page.map(this::toListDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClubListDto> getMyClubs(Boolean active, String q, Pageable pageable) {
+        User student = getCurrentStudent();
+        Boolean effectiveActive = active == null ? Boolean.TRUE : active;
+
+        Page<ClubMembership> page = clubMembershipRepository.findAll(
+                myClubsSpecification(student.getId(), effectiveActive, normalizeQuery(q)),
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "club.name"))
+        );
+
+        return page.map(membership -> toListDto(membership.getClub()));
     }
 
     @Transactional(readOnly = true)
@@ -215,6 +233,16 @@ public class ClubService {
         return currentUser;
     }
 
+    private User getCurrentStudent() {
+        User currentUser = authService.getCurrentUser();
+
+        if (currentUser.getRole() != UserRole.STUDENT) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student access required");
+        }
+
+        return currentUser;
+    }
+
     private void ensureNameIsAvailable(String name, Long clubId) {
         if (clubRepository.existsByNameAndIdNot(name, clubId)) {
             throw new ConflictException("Club name already exists: " + name);
@@ -261,8 +289,7 @@ public class ClubService {
                         .thenComparing(ClubMedia::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(item -> new MediaDto(
                         item.getId(),
-                        item.getUrl(),
-                        item.getType().name()
+                        item.getUrl()
                 ))
                 .toList();
 
@@ -343,7 +370,6 @@ public class ClubService {
 
             ClubMedia media = new ClubMedia();
             media.setClub(club);
-            media.setType(resolveMediaType(file));
             media.setUrl(url);
             media.setSortOrder(sortOrder++);
 
@@ -366,13 +392,6 @@ public class ClubService {
 
     private boolean hasFile(MultipartFile file) {
         return file != null && !file.isEmpty();
-    }
-
-    private MediaType resolveMediaType(MultipartFile file) {
-        String contentType = file.getContentType();
-        return contentType != null && contentType.toLowerCase().startsWith("image/")
-                ? MediaType.IMAGE
-                : MediaType.FILE;
     }
 
     private void cleanupUploadedFiles(List<String> uploadedUrls) {
@@ -403,5 +422,79 @@ public class ClubService {
         String authority = "ROLE_" + role.name();
         return authentication.getAuthorities().stream()
                 .anyMatch(grantedAuthority -> authority.equals(grantedAuthority.getAuthority()));
+    }
+
+    private Specification<Club> clubsSpecification(Boolean active, String q) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            applyClubFilters(predicates, cb, root.get("name"), root.get("description"), root.get("scheduleText"), root.get("room"), active, q);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<Club> managedClubsSpecification(Long teacherId, Boolean active, String q) {
+        return (root, query, cb) -> {
+            query.distinct(true);
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.join("teachers").get("teacher").get("id"), teacherId));
+            applyClubFilters(predicates, cb, root.get("name"), root.get("description"), root.get("scheduleText"), root.get("room"), active, q);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<ClubMembership> myClubsSpecification(Long studentId, Boolean active, String q) {
+        return (root, query, cb) -> {
+            var club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            predicates.add(cb.equal(root.get("status"), MembershipStatus.ACTIVE));
+            applyClubFilters(predicates, cb, club.get("name"), club.get("description"), club.get("scheduleText"), club.get("room"), active, q);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private void applyClubFilters(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            jakarta.persistence.criteria.Path<String> name,
+            jakarta.persistence.criteria.Path<String> description,
+            jakarta.persistence.criteria.Path<String> scheduleText,
+            jakarta.persistence.criteria.Path<String> room,
+            Boolean active,
+            String q
+    ) {
+        if (active != null) {
+            predicates.add(cb.equal(name.getParentPath().get("isActive"), active));
+        }
+
+        if (q != null) {
+            String like = "%" + q.toLowerCase() + "%";
+            predicates.add(cb.or(
+                    cb.like(cb.lower(name), like),
+                    cb.like(cb.lower(description), like),
+                    cb.like(cb.lower(cb.coalesce(scheduleText, "")), like),
+                    cb.like(cb.lower(cb.coalesce(room, "")), like)
+            ));
+        }
+    }
+
+    private Pageable withDefaultSort(Pageable pageable, Sort defaultSort) {
+        if (pageable == null || pageable.isUnpaged() || pageable.getSort().isSorted()) {
+            return pageable;
+        }
+
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
+    }
+
+    private Pageable withFixedSort(Pageable pageable, Sort sort) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return pageable;
+        }
+
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+    }
+
+    private String normalizeQuery(String q) {
+        return q == null || q.isBlank() ? null : q.trim();
     }
 }

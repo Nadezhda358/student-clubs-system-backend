@@ -29,9 +29,10 @@ public class TeacherClubController {
     @GetMapping
     public Page<ClubListDto> getManagedClubs(
             @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) String q,
             Pageable pageable
     ) {
-        return clubService.getManagedClubs(active, pageable);
+        return clubService.getManagedClubs(active, q, pageable);
     }
 
     @GetMapping("/{id}")

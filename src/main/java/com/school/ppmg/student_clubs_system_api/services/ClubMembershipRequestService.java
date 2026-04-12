@@ -14,7 +14,15 @@ import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRepos
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -94,20 +102,21 @@ public class ClubMembershipRequestService {
     }
 
     @Transactional(readOnly = true)
-    public List<MembershipApplicationDto> getMyApplications(MembershipRequestStatus status) {
+    public Page<MembershipApplicationDto> getMyApplications(
+            MembershipRequestStatus status,
+            Long clubId,
+            String q,
+            Pageable pageable
+    ) {
         User currentUser = authService.getCurrentUser();
         requireStudent(currentUser);
 
-        List<ClubMembershipRequest> applications = status == null
-                ? clubMembershipRequestRepository.findAllByStudent_IdOrderByCreatedAtDesc(currentUser.getId())
-                : clubMembershipRequestRepository.findAllByStudent_IdAndStatusOrderByCreatedAtDesc(
-                        currentUser.getId(),
-                        status
-                );
+        Page<ClubMembershipRequest> page = clubMembershipRequestRepository.findAll(
+                myApplicationsSpecification(currentUser.getId(), status, clubId, normalizeQuery(q)),
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
 
-        return applications.stream()
-                .map(this::toDto)
-                .toList();
+        return page.map(this::toDto);
     }
 
     @Transactional
@@ -134,35 +143,36 @@ public class ClubMembershipRequestService {
     }
 
     @Transactional(readOnly = true)
-    public List<MembershipApplicationDto> adminGetAll(
+    public Page<MembershipApplicationDto> adminGetAll(
             MembershipRequestStatus status,
             Long clubId,
-            String q
+            String q,
+            Pageable pageable
     ) {
-        String normalizedQuery = normalizeQuery(q);
+        Page<ClubMembershipRequest> page = clubMembershipRequestRepository.findAll(
+                managementApplicationsSpecification(null, status, clubId, normalizeQuery(q)),
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
 
-        return clubMembershipRequestRepository.findAllForAdmin(status, clubId, normalizedQuery).stream()
-                .map(this::toDto)
-                .toList();
+        return page.map(this::toDto);
     }
 
     @Transactional(readOnly = true)
-    public List<MembershipApplicationDto> teacherGetAll(
+    public Page<MembershipApplicationDto> teacherGetAll(
             MembershipRequestStatus status,
             Long clubId,
-            String q
+            String q,
+            Pageable pageable
     ) {
         User teacher = getCurrentTeacher();
         ensureTeacherCanManageClub(teacher, clubId);
 
-        return clubMembershipRequestRepository.findAllForTeacher(
-                        teacher.getId(),
-                        status,
-                        clubId,
-                        normalizeQuery(q)
-                ).stream()
-                .map(this::toDto)
-                .toList();
+        Page<ClubMembershipRequest> page = clubMembershipRequestRepository.findAll(
+                managementApplicationsSpecification(teacher.getId(), status, clubId, normalizeQuery(q)),
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+
+        return page.map(this::toDto);
     }
 
     @Transactional
@@ -309,6 +319,86 @@ public class ClubMembershipRequestService {
 
     private String normalizeQuery(String q) {
         return (q == null || q.isBlank()) ? null : q.trim();
+    }
+
+    private Specification<ClubMembershipRequest> myApplicationsSpecification(
+            Long studentId,
+            MembershipRequestStatus status,
+            Long clubId,
+            String q
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new java.util.ArrayList<>();
+            predicates.add(cb.equal(root.get("student").get("id"), studentId));
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(club.get("name")), like),
+                        cb.like(cb.lower(cb.coalesce(root.get("message"), "")), like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<ClubMembershipRequest> managementApplicationsSpecification(
+            Long teacherId,
+            MembershipRequestStatus status,
+            Long clubId,
+            String q
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            Join<Object, Object> student = root.join("student");
+            List<Predicate> predicates = new java.util.ArrayList<>();
+
+            if (teacherId != null) {
+                query.distinct(true);
+                predicates.add(cb.equal(club.join("teachers").get("teacher").get("id"), teacherId));
+            }
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                Expression<String> fullName = cb.lower(
+                        cb.concat(cb.concat(cb.coalesce(student.get("firstName"), ""), " "), cb.coalesce(student.get("lastName"), ""))
+                );
+                predicates.add(cb.or(
+                        cb.like(cb.lower(club.get("name")), like),
+                        cb.like(cb.lower(student.get("email")), like),
+                        cb.like(fullName, like),
+                        cb.like(cb.lower(cb.coalesce(root.get("message"), "")), like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Pageable withDefaultSort(Pageable pageable, Sort defaultSort) {
+        if (pageable == null || pageable.isUnpaged() || pageable.getSort().isSorted()) {
+            return pageable;
+        }
+
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
     }
 
     private MembershipApplicationDto toDto(ClubMembershipRequest application) {

@@ -36,6 +36,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
@@ -52,6 +53,7 @@ public class EventService {
     private final ClubTeacherRepository clubTeacherRepository;
     private final ClubMembershipRepository clubMembershipRepository;
     private final AuthService authService;
+    private final S3StorageService s3StorageService;
 
     @Transactional(readOnly = true)
     public Page<EventListDto> getPublicEvents(
@@ -231,6 +233,11 @@ public class EventService {
         eventRepository.delete(getTeacherManagedEventOrThrow(id));
     }
 
+    @Transactional
+    public EventDto updateTeacherMainImage(Long id, MultipartFile file) {
+        return updateEventMainImage(getTeacherManagedEventOrThrow(id), file);
+    }
+
     @Transactional(readOnly = true)
     public Page<EventParticipationDto> getTeacherParticipants(
             Long eventId,
@@ -313,6 +320,12 @@ public class EventService {
     public void deleteAdminEvent(Long id) {
         requireAdmin();
         eventRepository.delete(getEventOrThrow(id));
+    }
+
+    @Transactional
+    public EventDto updateAdminMainImage(Long id, MultipartFile file) {
+        requireAdmin();
+        return updateEventMainImage(getEventOrThrow(id), file);
     }
 
     @Transactional(readOnly = true)
@@ -760,6 +773,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
+                event.getMainImageUrl(),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -784,6 +798,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
+                event.getMainImageUrl(),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -809,6 +824,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
+                event.getMainImageUrl(),
                 event.getStatus(),
                 event.getAudience(),
                 registration.getStatus(),
@@ -842,6 +858,12 @@ public class EventService {
 
     private long getRegisteredCount(Event event) {
         return eventRegistrationRepository.countByEvent_IdAndStatus(event.getId(), RegistrationStatus.REGISTERED);
+    }
+
+    private EventDto updateEventMainImage(Event event, MultipartFile file) {
+        String url = s3StorageService.upload(file, "events/" + event.getId() + "/main-image");
+        event.setMainImageUrl(url);
+        return toDto(eventRepository.save(event));
     }
 
     private Long getAvailableSpots(Event event, long registeredCount) {

@@ -7,11 +7,11 @@ import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
 import com.school.ppmg.student_clubs_system_api.services.ClubMembershipRequestService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -32,10 +32,13 @@ public class MembershipApplicationController {
 
     @GetMapping("/me/membership-applications")
     @PreAuthorize("hasRole('STUDENT')")
-    public List<MembershipApplicationDto> getMyApplications(
-            @RequestParam(required = false) MembershipRequestStatus status
+    public Page<MembershipApplicationDto> getMyApplications(
+            @RequestParam(required = false) MembershipRequestStatus status,
+            @RequestParam(required = false) Long clubId,
+            @RequestParam(required = false) String q,
+            Pageable pageable
     ) {
-        return clubMembershipRequestService.getMyApplications(status);
+        return clubMembershipRequestService.getMyApplications(status, clubId, q, pageable);
     }
 
     @PostMapping("/me/membership-applications/{id}/cancel")
@@ -46,22 +49,24 @@ public class MembershipApplicationController {
 
     @GetMapping("/admin/membership-applications")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<MembershipApplicationDto> adminGetAllApplications(
+    public Page<MembershipApplicationDto> adminGetAllApplications(
             @RequestParam(required = false) MembershipRequestStatus status,
             @RequestParam(required = false) Long clubId,
-            @RequestParam(required = false) String q
+            @RequestParam(required = false) String q,
+            Pageable pageable
     ) {
-        return clubMembershipRequestService.adminGetAll(status, clubId, q);
+        return clubMembershipRequestService.adminGetAll(status, clubId, q, pageable);
     }
 
     @GetMapping("/teacher/membership-applications")
     @PreAuthorize("hasRole('TEACHER')")
-    public List<MembershipApplicationDto> teacherGetAllApplications(
+    public Page<MembershipApplicationDto> teacherGetAllApplications(
             @RequestParam(required = false) MembershipRequestStatus status,
             @RequestParam(required = false) Long clubId,
-            @RequestParam(required = false) String q
+            @RequestParam(required = false) String q,
+            Pageable pageable
     ) {
-        return clubMembershipRequestService.teacherGetAll(status, clubId, q);
+        return clubMembershipRequestService.teacherGetAll(status, clubId, q, pageable);
     }
 
     @PostMapping("/admin/membership-applications/{id}")
