@@ -57,6 +57,10 @@ public class Club extends AuditableEntity {
     @Column(name = "contact_email")
     private String contactEmail;
 
+    @Pattern(
+            regexp = "^$|^(?=.*\\d)\\+?[\\d()\\s-]+$",
+            message = "contactPhone can contain only digits, spaces, parentheses, hyphens, and an optional leading +"
+    )
     @Size(max = 40)
     @Column(name = "contact_phone", length = 40)
     private String contactPhone;

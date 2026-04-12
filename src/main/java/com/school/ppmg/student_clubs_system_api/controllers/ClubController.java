@@ -3,6 +3,8 @@ package com.school.ppmg.student_clubs_system_api.controllers;
 import com.school.ppmg.student_clubs_system_api.dtos.club.ClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.club.ClubListDto;
 import com.school.ppmg.student_clubs_system_api.dtos.club.CreateClubOptions;
+import com.school.ppmg.student_clubs_system_api.dtos.club.AddClubTeachersRequest;
+import com.school.ppmg.student_clubs_system_api.dtos.club.CreateClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.club.CreateClubRequest;
 import com.school.ppmg.student_clubs_system_api.dtos.club.UpsertClubDto;
 import com.school.ppmg.student_clubs_system_api.services.ClubService;
@@ -25,9 +27,10 @@ public class ClubController {
     @GetMapping
     public Page<ClubListDto> getAll(
             @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) String q,
             Pageable pageable
     ) {
-        return clubService.getAll(active, pageable);
+        return clubService.getAll(active, q, pageable);
     }
 
     @GetMapping("/{id}")
@@ -37,7 +40,7 @@ public class ClubController {
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ClubDto create(@Valid @RequestBody UpsertClubDto dto) {
+    public ClubDto create(@Valid @RequestBody CreateClubDto dto) {
         return clubService.create(dto);
     }
 
@@ -45,10 +48,8 @@ public class ClubController {
     @ResponseStatus(HttpStatus.CREATED)
     public ClubDto createMultipart(@Valid @ModelAttribute CreateClubRequest request) {
         return clubService.create(
-                request.toUpsertDto(),
+                request.toCreateClubDto(),
                 new CreateClubOptions(
-                        request.getTeacherId(),
-                        request.getTeacherIsPrimary(),
                         request.getMainImage(),
                         request.getMediaFiles()
                 )
@@ -67,6 +68,24 @@ public class ClubController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         clubService.delete(id);
+    }
+
+    @PostMapping("/{id}/teachers")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void addTeachers(
+            @PathVariable Long id,
+            @Valid @RequestBody AddClubTeachersRequest request
+    ) {
+        clubService.addTeachers(id, request.teacherIds());
+    }
+
+    @DeleteMapping("/{id}/teachers/{teacherId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeTeacher(
+            @PathVariable Long id,
+            @PathVariable Long teacherId
+    ) {
+        clubService.removeTeacher(id, teacherId);
     }
 
     @PostMapping(value = "/{id}/main-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

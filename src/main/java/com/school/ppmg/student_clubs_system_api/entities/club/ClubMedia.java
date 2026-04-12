@@ -1,7 +1,6 @@
 package com.school.ppmg.student_clubs_system_api.entities.club;
 
 import com.school.ppmg.student_clubs_system_api.entities.base.AuditableEntity;
-import com.school.ppmg.student_clubs_system_api.enums.MediaType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
@@ -36,11 +35,6 @@ public class ClubMedia extends AuditableEntity {
             foreignKey = @ForeignKey(name = "fk_club_media_club")
     )
     private Club club;
-
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private MediaType type;
 
     // URL or storage path (e.g. https://... or /uploads/...)
     @NotBlank

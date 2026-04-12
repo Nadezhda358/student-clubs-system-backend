@@ -29,14 +29,7 @@ public class S3StorageService {
             Map.entry("image/jpeg", "jpg"),
             Map.entry("image/jpg", "jpg"),
             Map.entry("image/png", "png"),
-            Map.entry("image/webp", "webp"),
-            Map.entry("application/pdf", "pdf"),
-            Map.entry("application/msword", "doc"),
-            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
-            Map.entry("application/vnd.ms-powerpoint", "ppt"),
-            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"),
-            Map.entry("video/mp4", "mp4"),
-            Map.entry("video/webm", "webm")
+            Map.entry("image/webp", "webp")
     );
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = CONTENT_TYPE_EXTENSIONS.keySet();

@@ -31,6 +31,13 @@ public class SecurityConfig {
                 ))
                 .authorizeHttpRequests(auth -> auth
 
+                        // Swagger endpoints
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+
                         // Auth endpoints
                         .requestMatchers("/api/auth/**").permitAll()
 
@@ -45,17 +52,21 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/clubs")
                         .hasRole("ADMIN")
 
-                        // Club update - ADMIN or TEACHER
+                        // Club update - ADMIN only
                         .requestMatchers(HttpMethod.PUT, "/api/clubs/**")
-                        .hasAnyRole("ADMIN", "TEACHER")
+                        .hasRole("ADMIN")
 
                         // Club delete - ADMIN only
                         .requestMatchers(HttpMethod.DELETE, "/api/clubs/**")
                         .hasRole("ADMIN")
 
-                        // Upload main image - ADMIN or TEACHER
+                        // Upload main image - ADMIN only
                         .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
-                        .hasAnyRole("ADMIN", "TEACHER")
+                        .hasRole("ADMIN")
+
+                        // Teacher endpoints
+                        .requestMatchers("/api/teacher/**")
+                        .hasRole("TEACHER")
 
                         // Admin endpoints
                         .requestMatchers("/api/admin/**")
