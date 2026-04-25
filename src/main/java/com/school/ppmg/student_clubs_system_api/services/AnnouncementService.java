@@ -78,7 +78,7 @@ public class AnnouncementService {
 
         Page<Announcement> page = announcementRepository.findAll(
                 managementAnnouncementsSpecification(teacher.getId(), clubId, published, normalizeQuery(q), from, to),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "publishedAt", "createdAt"))
         );
 
         return page.map(this::toDto);
@@ -132,7 +132,7 @@ public class AnnouncementService {
 
         Page<Announcement> page = announcementRepository.findAll(
                 managementAnnouncementsSpecification(null, clubId, published, normalizeQuery(q), from, to),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "publishedAt", "createdAt"))
         );
 
         return page.map(this::toDto);

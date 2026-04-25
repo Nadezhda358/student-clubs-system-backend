@@ -940,7 +940,6 @@ public class EventService {
     }
 
     private boolean shouldApplyDefaultEventListingOrder(Pageable pageable) {
-        System.out.println(pageable);
         return pageable == null || pageable.isUnpaged() || !pageable.getSort().isSorted();
     }
 
