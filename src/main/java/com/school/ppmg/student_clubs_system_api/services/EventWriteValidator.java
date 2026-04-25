@@ -2,6 +2,7 @@ package com.school.ppmg.student_clubs_system_api.services;
 
 import com.school.ppmg.student_clubs_system_api.dtos.event.UpsertEventDto;
 import com.school.ppmg.student_clubs_system_api.entities.event.Event;
+import com.school.ppmg.student_clubs_system_api.enums.EventStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,25 +15,27 @@ final class EventWriteValidator {
 
     static void validateForCreate(UpsertEventDto dto, OffsetDateTime now) {
         validateChronology(dto);
-        validateStartAtNotInPast(dto.startAt(), now);
-        validateDeadlineNotInPast(dto.registrationDeadline(), now);
+        if (dto.status() == EventStatus.PUBLISHED) {
+            validatePublishableDates(dto, now);
+        }
     }
 
     static void validateForUpdate(Event existingEvent, UpsertEventDto dto, OffsetDateTime now) {
         validateChronology(dto);
 
-        if (hasStarted(existingEvent.getStartAt(), now)) {
-            if (!sameMoment(existingEvent.getStartAt(), dto.startAt())
-                    || !sameMoment(existingEvent.getEndAt(), dto.endAt())
-                    || !sameMoment(existingEvent.getRegistrationDeadline(), dto.registrationDeadline())) {
-                throw badRequest("Event dates cannot be changed after the event has started");
-            }
+        boolean existingDatePassed = hasStarted(existingEvent.getStartAt(), now);
+
+        if (existingEvent.getStatus() == EventStatus.PUBLISHED && existingDatePassed) {
+            throw badRequest("Published events cannot be edited after they have started. Create a new event if this schedule needs to change.");
+        }
+
+        if (existingEvent.getStatus() == EventStatus.CANCELLED && existingDatePassed) {
+            validatePastCancelledUpdate(existingEvent, dto);
             return;
         }
 
-        validateStartAtNotInPast(dto.startAt(), now);
-        if (!sameMoment(existingEvent.getRegistrationDeadline(), dto.registrationDeadline())) {
-            validateDeadlineNotInPast(dto.registrationDeadline(), now);
+        if (dto.status() == EventStatus.PUBLISHED) {
+            validatePublishableDates(dto, now);
         }
     }
 
@@ -56,15 +59,32 @@ final class EventWriteValidator {
         }
     }
 
+    private static void validatePublishableDates(UpsertEventDto dto, OffsetDateTime now) {
+        validateStartAtNotInPast(dto.startAt(), now);
+        validateDeadlineNotInPast(dto.registrationDeadline(), now);
+    }
+
+    private static void validatePastCancelledUpdate(Event existingEvent, UpsertEventDto dto) {
+        if (dto.status() != EventStatus.CANCELLED) {
+            throw badRequest("Cancelled events whose original start date has passed must stay CANCELLED. Create a new event if you want to schedule it again.");
+        }
+
+        if (!sameMoment(existingEvent.getStartAt(), dto.startAt())
+                || !sameMoment(existingEvent.getEndAt(), dto.endAt())
+                || !sameMoment(existingEvent.getRegistrationDeadline(), dto.registrationDeadline())) {
+            throw badRequest("Cancelled events whose original start date has passed cannot be rescheduled. Create a new event with the new dates instead.");
+        }
+    }
+
     private static void validateStartAtNotInPast(OffsetDateTime startAt, OffsetDateTime now) {
         if (startAt != null && startAt.isBefore(now)) {
-            throw badRequest("startAt must be in the present or future");
+            throw badRequest("Published events must have startAt in the present or future. Save it as DRAFT if the date is still being planned.");
         }
     }
 
     private static void validateDeadlineNotInPast(OffsetDateTime registrationDeadline, OffsetDateTime now) {
         if (registrationDeadline != null && registrationDeadline.isBefore(now)) {
-            throw badRequest("registrationDeadline must be in the present or future");
+            throw badRequest("Published events must have registrationDeadline in the present or future. Move the deadline forward before publishing.");
         }
     }
 

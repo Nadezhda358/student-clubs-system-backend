@@ -265,7 +265,7 @@ public class ClubService {
                 club.getName(),
                 club.getRoom(),
                 club.getIsActive(),
-                club.getMainImageUrl()
+                resolveImageUrl(club.getMainImageUrl())
         );
     }
 
@@ -289,7 +289,7 @@ public class ClubService {
                         .thenComparing(ClubMedia::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(item -> new MediaDto(
                         item.getId(),
-                        item.getUrl()
+                        resolveImageUrl(item.getUrl())
                 ))
                 .toList();
 
@@ -301,7 +301,7 @@ public class ClubService {
                 club.getRoom(),
                 club.getContactEmail(),
                 club.getContactPhone(),
-                club.getMainImageUrl(),
+                resolveImageUrl(club.getMainImageUrl()),
                 club.getIsActive(),
                 club.getCreatedBy() != null ? club.getCreatedBy().getId() : null,
                 club.getCreatedAt(),
@@ -402,6 +402,10 @@ public class ClubService {
                 // Ignore cleanup failures and preserve the original exception.
             }
         }
+    }
+
+    private String resolveImageUrl(String value) {
+        return s3StorageService.resolveReadUrl(value);
     }
 
     private boolean canViewInactiveClubs() {

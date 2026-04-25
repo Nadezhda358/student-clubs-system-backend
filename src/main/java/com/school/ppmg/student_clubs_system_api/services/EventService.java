@@ -66,9 +66,9 @@ public class EventService {
     ) {
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
-                publicEventsSpecification(clubId, normalizeQuery(q), from, to, defaultUpcoming(timeFilter)),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+        Page<Event> page = findEventListingPage(
+                publicEventsSpecification(clubId, normalizeQuery(q), from, to, defaultAll(timeFilter)),
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -181,7 +181,7 @@ public class EventService {
         ensureTeacherCanManageFilteredClub(teacher, clubId);
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
+        Page<Event> page = findEventListingPage(
                 teacherEventsSpecification(
                         teacher.getId(),
                         clubId,
@@ -191,7 +191,7 @@ public class EventService {
                         defaultAll(timeFilter),
                         status
                 ),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -278,9 +278,9 @@ public class EventService {
         requireAdmin();
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
+        Page<Event> page = findEventListingPage(
                 adminEventsSpecification(clubId, normalizeQuery(q), from, to, defaultAll(timeFilter), status),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -425,6 +425,15 @@ public class EventService {
         }
 
         return toParticipationDto(eventRegistrationRepository.save(registration));
+    }
+
+    private Page<Event> findEventListingPage(Specification<Event> specification, Pageable pageable) {
+        Pageable effectivePageable = pageable == null ? Pageable.unpaged() : pageable;
+        Specification<Event> effectiveSpecification = shouldApplyDefaultEventListingOrder(effectivePageable)
+                ? withUpcomingEventsFirstOrder(specification)
+                : specification;
+
+        return eventRepository.findAll(effectiveSpecification, effectivePageable);
     }
 
     private void validateManagedParticipationStatus(RegistrationStatus status) {
@@ -773,7 +782,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -798,7 +807,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -824,7 +833,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getStatus(),
                 event.getAudience(),
                 registration.getStatus(),
@@ -864,6 +873,10 @@ public class EventService {
         String url = s3StorageService.upload(file, "events/" + event.getId() + "/main-image");
         event.setMainImageUrl(url);
         return toDto(eventRepository.save(event));
+    }
+
+    private String resolveImageUrl(String value) {
+        return s3StorageService.resolveReadUrl(value);
     }
 
     private Long getAvailableSpots(Event event, long registeredCount) {
@@ -918,20 +931,51 @@ public class EventService {
         }
     }
 
-    private Pageable withDefaultSort(Pageable pageable, Sort defaultSort) {
-        if (pageable == null || pageable.isUnpaged() || pageable.getSort().isSorted()) {
-            return pageable;
-        }
-
-        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
-    }
-
     private Pageable withFixedSort(Pageable pageable, Sort sort) {
         if (pageable == null || pageable.isUnpaged()) {
             return pageable;
         }
 
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+    }
+
+    private boolean shouldApplyDefaultEventListingOrder(Pageable pageable) {
+        System.out.println(pageable);
+        return pageable == null || pageable.isUnpaged() || !pageable.getSort().isSorted();
+    }
+
+    private Specification<Event> withUpcomingEventsFirstOrder(Specification<Event> specification) {
+        return (root, query, cb) -> {
+            Predicate predicate = specification == null ? cb.conjunction() : specification.toPredicate(root, query, cb);
+
+            if (query != null && !isCountQuery(query)) {
+                OffsetDateTime now = OffsetDateTime.now();
+                Path<OffsetDateTime> startAt = root.get("startAt");
+                Expression<Integer> upcomingBucket = cb.<Integer>selectCase()
+                        .when(cb.greaterThanOrEqualTo(startAt, now), 0)
+                        .otherwise(1);
+                Expression<OffsetDateTime> upcomingOrder = cb.<OffsetDateTime>selectCase()
+                        .when(cb.greaterThanOrEqualTo(startAt, now), startAt)
+                        .otherwise(cb.nullLiteral(OffsetDateTime.class));
+                Expression<OffsetDateTime> pastOrder = cb.<OffsetDateTime>selectCase()
+                        .when(cb.lessThan(startAt, now), startAt)
+                        .otherwise(cb.nullLiteral(OffsetDateTime.class));
+
+                query.orderBy(
+                        cb.asc(upcomingBucket),
+                        cb.asc(upcomingOrder),
+                        cb.desc(pastOrder),
+                        cb.asc(root.get("id"))
+                );
+            }
+
+            return predicate;
+        };
+    }
+
+    private boolean isCountQuery(jakarta.persistence.criteria.CriteriaQuery<?> query) {
+        Class<?> resultType = query.getResultType();
+        return resultType == Long.class || resultType == long.class;
     }
 
     private String normalizeQuery(String q) {
