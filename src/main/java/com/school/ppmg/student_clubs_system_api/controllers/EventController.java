@@ -47,6 +47,19 @@ public class EventController {
         return eventService.getPublicById(id);
     }
 
+    @GetMapping("/me/events/registered")
+    @PreAuthorize("hasRole('STUDENT')")
+    public Page<EventListDto> getMyRegisteredPublicEvents(
+            @RequestParam(required = false) Long clubId,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) EventTimeFilter timeFilter,
+            Pageable pageable
+    ) {
+        return eventService.getMyRegisteredPublicEvents(clubId, q, from, to, timeFilter, pageable);
+    }
+
     @PostMapping("/events/{id}/registrations")
     @PreAuthorize("hasRole('STUDENT')")
     public EventParticipationDto register(@PathVariable Long id) {

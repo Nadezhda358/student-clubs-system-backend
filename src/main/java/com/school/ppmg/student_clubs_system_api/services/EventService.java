@@ -83,6 +83,33 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
+    public Page<EventListDto> getMyRegisteredPublicEvents(
+            Long clubId,
+            String q,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            EventTimeFilter timeFilter,
+            Pageable pageable
+    ) {
+        User student = getCurrentStudent();
+        EventWriteValidator.validateSearchRange(from, to);
+
+        Page<EventRegistration> page = eventRegistrationRepository.findAll(
+                myRegisteredPublicEventsSpecification(
+                        student.getId(),
+                        clubId,
+                        normalizeQuery(q),
+                        from,
+                        to,
+                        defaultAll(timeFilter)
+                ),
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
+        );
+
+        return page.map(registration -> toListDto(registration.getEvent()));
+    }
+
+    @Transactional(readOnly = true)
     public Page<MyEventDto> getMyEvents(
             RegistrationStatus registrationStatus,
             EventStatus eventStatus,
@@ -674,6 +701,52 @@ public class EventService {
             }
 
             applyTimeFilter(predicates, cb, event.get("startAt"), timeFilter);
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(event.get("title")), like),
+                        cb.like(cb.lower(event.get("description")), like),
+                        cb.like(cb.lower(cb.coalesce(event.get("location"), "")), like),
+                        cb.like(cb.lower(club.get("name")), like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<EventRegistration> myRegisteredPublicEventsSpecification(
+            Long studentId,
+            Long clubId,
+            String q,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            EventTimeFilter timeFilter
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+
+            predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            predicates.add(cb.equal(root.get("status"), RegistrationStatus.REGISTERED));
+            predicates.add(cb.equal(event.get("status"), EventStatus.PUBLISHED));
+            predicates.add(cb.isTrue(club.get("isActive")));
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            applyTimeFilter(predicates, cb, event.get("startAt"), timeFilter);
+
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(event.get("startAt"), from));
+            }
+
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(event.get("startAt"), to));
+            }
 
             if (q != null) {
                 String like = "%" + q.toLowerCase() + "%";
