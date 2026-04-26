@@ -400,6 +400,7 @@ public class EventService {
         validateManagedParticipationStatus(newStatus);
 
         EventRegistration registration = getRegistrationOrThrow(event.getId(), studentId);
+        ensureEventHasNotStarted(event);
         OffsetDateTime now = OffsetDateTime.now();
 
         if (newStatus == registration.getStatus()) {
@@ -446,6 +447,13 @@ public class EventService {
                     HttpStatus.BAD_REQUEST,
                     "Only REGISTERED and CANCELLED statuses are supported"
             );
+        }
+    }
+
+    private void ensureEventHasNotStarted(Event event) {
+        OffsetDateTime startAt = event.getStartAt();
+        if (startAt != null && !OffsetDateTime.now().isBefore(startAt)) {
+            throw new ConflictException("Participation status can only be changed before the event starts");
         }
     }
 
