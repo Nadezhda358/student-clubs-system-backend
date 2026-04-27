@@ -17,7 +17,7 @@ public class SmtpEmailSender implements EmailSender {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.teacher-invite.from-email")
+    @Value("${app.teacher-invite.from-email}")
     private String fromEmail;
 
     @Value("${app.teacher-invite.subject:Teacher account invitation}")
