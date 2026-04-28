@@ -13,9 +13,11 @@ import com.school.ppmg.student_clubs_system_api.exceptions.ConflictException;
 import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMediaRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.EventRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.AnnouncementRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -46,7 +48,9 @@ public class ClubService {
     private final ClubTeacherRepository clubTeacherRepository;
     private final ClubMediaRepository clubMediaRepository;
     private final ClubMembershipRepository clubMembershipRepository;
+    private final ClubMembershipRequestRepository clubMembershipRequestRepository;
     private final EventRepository eventRepository;
+    private final AnnouncementRepository announcementRepository;
     private final UserRepository userRepository;
     private final AuthService authService;
     private final S3StorageService s3StorageService;
@@ -91,7 +95,7 @@ public class ClubService {
         Club club = getClubOrThrow(id);
 
         if (!Boolean.TRUE.equals(club.getIsActive()) && !canViewInactiveClubs()) {
-            throw new ResourceNotFoundException("Club with id=" + id + " not found");
+            throw new ResourceNotFoundException("Клуб с id=" + id + " не е намерен");
         }
 
         return toDto(club);
@@ -110,7 +114,7 @@ public class ClubService {
     @Transactional
     public ClubDto create(CreateClubDto dto, CreateClubOptions options) {
         if (clubRepository.existsByName(dto.name())) {
-            throw new ConflictException("Club name already exists: " + dto.name());
+            throw new ConflictException("Вече съществува клуб с име: " + dto.name());
         }
 
         CreateClubOptions effectiveOptions = options == null
@@ -150,7 +154,9 @@ public class ClubService {
         Club club = getClubOrThrow(id);
         OffsetDateTime deletedAt = OffsetDateTime.now();
         eventRepository.cancelFutureEventsForClub(club.getId(), deletedAt);
+        announcementRepository.softDeleteByClubId(club.getId(), deletedAt);
         clubMembershipRepository.markActiveMembershipsAsLeftForClub(club.getId(), deletedAt);
+        clubMembershipRequestRepository.softDeleteByClubId(club.getId(), deletedAt);
         clubRepository.delete(club);
     }
 
@@ -209,7 +215,7 @@ public class ClubService {
 
     private Club getClubOrThrow(Long id) {
         return clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Клуб с id=" + id + " не е намерен"));
     }
 
     private Club getManagedClubOrThrow(Long id) {
@@ -217,7 +223,7 @@ public class ClubService {
         User teacher = getCurrentTeacher();
 
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(id, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
 
         return club;
@@ -227,7 +233,7 @@ public class ClubService {
         User currentUser = authService.getCurrentUser();
 
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
 
         return currentUser;
@@ -237,7 +243,7 @@ public class ClubService {
         User currentUser = authService.getCurrentUser();
 
         if (currentUser.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е ученически достъп");
         }
 
         return currentUser;
@@ -245,7 +251,7 @@ public class ClubService {
 
     private void ensureNameIsAvailable(String name, Long clubId) {
         if (clubRepository.existsByNameAndIdNot(name, clubId)) {
-            throw new ConflictException("Club name already exists: " + name);
+            throw new ConflictException("Вече съществува клуб с име: " + name);
         }
     }
 
@@ -319,10 +325,10 @@ public class ClubService {
 
     private User getTeacherOrThrow(Long teacherId) {
         User teacher = userRepository.findById(teacherId)
-                .orElseThrow(() -> new ResourceNotFoundException("Teacher with id=" + teacherId + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Учител с id=" + teacherId + " не е намерен"));
 
         if (teacher.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User with id=" + teacherId + " is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Потребител с id=" + teacherId + " не е учител");
         }
 
         return teacher;

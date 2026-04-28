@@ -95,12 +95,12 @@ public class Event extends AuditableEntity {
     )
     private User createdBy;
 
-    @AssertTrue(message = "endAt must be on/after startAt")
+    @AssertTrue(message = "Крайният час трябва да е на или след началния")
     public boolean isEndAfterStart() {
         return endAt == null || startAt == null || !endAt.isBefore(startAt);
     }
 
-    @AssertTrue(message = "registrationDeadline must be on/before startAt")
+    @AssertTrue(message = "Крайният срок за записване трябва да е на или преди началото")
     public boolean isDeadlineValid() {
         return registrationDeadline == null || startAt == null || !registrationDeadline.isAfter(startAt);
     }

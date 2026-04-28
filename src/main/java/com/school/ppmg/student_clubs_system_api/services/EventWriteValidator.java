@@ -26,7 +26,7 @@ final class EventWriteValidator {
         boolean existingDatePassed = hasStarted(existingEvent.getStartAt(), now);
 
         if (existingEvent.getStatus() == EventStatus.PUBLISHED && existingDatePassed) {
-            throw badRequest("Published events cannot be edited after they have started. Create a new event if this schedule needs to change.");
+            throw badRequest("Публикувани събития не могат да се редактират след началото им. Създайте ново събитие, ако графикът трябва да се промени.");
         }
 
         if (existingEvent.getStatus() == EventStatus.CANCELLED && existingDatePassed) {
@@ -41,7 +41,7 @@ final class EventWriteValidator {
 
     static void validateSearchRange(OffsetDateTime from, OffsetDateTime to) {
         if (from != null && to != null && from.isAfter(to)) {
-            throw badRequest("from must be on/before to");
+            throw badRequest("Началната дата трябва да е на или преди крайната дата");
         }
     }
 
@@ -51,11 +51,11 @@ final class EventWriteValidator {
         OffsetDateTime registrationDeadline = dto.registrationDeadline();
 
         if (startAt != null && endAt != null && endAt.isBefore(startAt)) {
-            throw badRequest("endAt must be on/after startAt");
+            throw badRequest("Крайният час трябва да е на или след началния");
         }
 
         if (startAt != null && registrationDeadline != null && registrationDeadline.isAfter(startAt)) {
-            throw badRequest("registrationDeadline must be on/before startAt");
+            throw badRequest("Крайният срок за записване трябва да е на или преди началото");
         }
     }
 
@@ -66,25 +66,25 @@ final class EventWriteValidator {
 
     private static void validatePastCancelledUpdate(Event existingEvent, UpsertEventDto dto) {
         if (dto.status() != EventStatus.CANCELLED) {
-            throw badRequest("Cancelled events whose original start date has passed must stay CANCELLED. Create a new event if you want to schedule it again.");
+            throw badRequest("Отменени събития, чиято първоначална начална дата е минала, трябва да останат отменени. Създайте ново събитие, ако искате да го планирате отново.");
         }
 
         if (!sameMoment(existingEvent.getStartAt(), dto.startAt())
                 || !sameMoment(existingEvent.getEndAt(), dto.endAt())
                 || !sameMoment(existingEvent.getRegistrationDeadline(), dto.registrationDeadline())) {
-            throw badRequest("Cancelled events whose original start date has passed cannot be rescheduled. Create a new event with the new dates instead.");
+            throw badRequest("Отменени събития, чиято първоначална начална дата е минала, не могат да бъдат пренасрочвани. Вместо това създайте ново събитие с новите дати.");
         }
     }
 
     private static void validateStartAtNotInPast(OffsetDateTime startAt, OffsetDateTime now) {
         if (startAt != null && startAt.isBefore(now)) {
-            throw badRequest("Published events must have startAt in the present or future. Save it as DRAFT if the date is still being planned.");
+            throw badRequest("Публикуваните събития трябва да имат начало сега или в бъдеще. Запазете събитието като чернова, ако датата още се планира.");
         }
     }
 
     private static void validateDeadlineNotInPast(OffsetDateTime registrationDeadline, OffsetDateTime now) {
         if (registrationDeadline != null && registrationDeadline.isBefore(now)) {
-            throw badRequest("Published events must have registrationDeadline in the present or future. Move the deadline forward before publishing.");
+            throw badRequest("Публикуваните събития трябва да имат краен срок за записване сега или в бъдеще. Преместете срока напред преди публикуване.");
         }
     }
 

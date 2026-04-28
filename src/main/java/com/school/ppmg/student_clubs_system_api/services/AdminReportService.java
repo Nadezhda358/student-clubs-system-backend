@@ -91,7 +91,7 @@ public class AdminReportService {
     private User requireAdmin() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е администраторски достъп");
         }
         return currentUser;
     }

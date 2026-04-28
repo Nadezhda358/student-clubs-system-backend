@@ -77,7 +77,7 @@ public class EventService {
     @Transactional(readOnly = true)
     public EventDto getPublicById(Long id) {
         Event event = eventRepository.findOne(publicEventByIdSpecification(id))
-                .orElseThrow(() -> new ResourceNotFoundException("Event with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Събитие с id=" + id + " не е намерено"));
 
         return toDto(event);
     }
@@ -146,11 +146,11 @@ public class EventService {
 
         if (registration != null) {
             if (registration.getStatus() == RegistrationStatus.REGISTERED) {
-                throw new ConflictException("You are already registered for this event");
+                throw new ConflictException("Вече сте записани за това събитие");
             }
 
             if (registration.getStatus() != RegistrationStatus.CANCELLED) {
-                throw new ConflictException("This participation cannot be registered again");
+                throw new ConflictException("Това участие не може да бъде регистрирано отново");
             }
 
             ensureCapacityAvailable(event);
@@ -179,13 +179,13 @@ public class EventService {
         EventRegistration registration = getRegistrationOrThrow(eventId, student.getId());
 
         if (registration.getStatus() != RegistrationStatus.REGISTERED) {
-            throw new ConflictException("Only active registrations can be cancelled");
+            throw new ConflictException("Само активни регистрации могат да бъдат отменяни");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
         OffsetDateTime deadline = getEffectiveRegistrationDeadline(registration.getEvent());
         if (now.isAfter(deadline)) {
-            throw new ConflictException("Registration can no longer be cancelled after the registration deadline");
+            throw new ConflictException("Регистрацията вече не може да бъде отменена след крайния срок за записване");
         }
 
         registration.setStatus(RegistrationStatus.CANCELLED);
@@ -436,7 +436,7 @@ public class EventService {
 
         if (newStatus == RegistrationStatus.REGISTERED) {
             if (registration.getStatus() != RegistrationStatus.CANCELLED) {
-                throw new ConflictException("Only cancelled participations can be reopened");
+                throw new ConflictException("Само отменени участия могат да бъдат отворени отново");
             }
 
             ensureManagedRegistrationAllowed(event, registration.getStudent());
@@ -445,7 +445,7 @@ public class EventService {
             registration.setCancelledAt(null);
         } else {
             if (registration.getStatus() != RegistrationStatus.REGISTERED) {
-                throw new ConflictException("Only active registrations can be cancelled");
+                throw new ConflictException("Само активни регистрации могат да бъдат отменяни");
             }
 
             registration.setStatus(RegistrationStatus.CANCELLED);
@@ -466,13 +466,13 @@ public class EventService {
 
     private void validateManagedParticipationStatus(RegistrationStatus status) {
         if (status == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Статусът е задължителен");
         }
 
         if (status != RegistrationStatus.REGISTERED && status != RegistrationStatus.CANCELLED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Only REGISTERED and CANCELLED statuses are supported"
+                    "Поддържат се само статуси за регистрирано и отменено участие"
             );
         }
     }
@@ -480,21 +480,21 @@ public class EventService {
     private void ensureEventHasNotStarted(Event event) {
         OffsetDateTime startAt = event.getStartAt();
         if (startAt != null && !OffsetDateTime.now().isBefore(startAt)) {
-            throw new ConflictException("Participation status can only be changed before the event starts");
+            throw new ConflictException("Статусът на участието може да се променя само преди началото на събитието");
         }
     }
 
     private void ensureStudentCanRegister(User student, Event event) {
         if (!Boolean.TRUE.equals(event.getClub().getIsActive())) {
-            throw new ConflictException("The club for this event is inactive");
+            throw new ConflictException("Клубът на това събитие не е активен");
         }
 
         if (event.getStatus() != EventStatus.PUBLISHED) {
-            throw new ConflictException("This event is not open for student registration");
+            throw new ConflictException("Това събитие не е отворено за ученически регистрации");
         }
 
         if (OffsetDateTime.now().isAfter(getEffectiveRegistrationDeadline(event))) {
-            throw new ConflictException("Registration deadline has passed for this event");
+            throw new ConflictException("Крайният срок за записване за това събитие е изтекъл");
         }
 
         ensureAudienceEligibility(event, student);
@@ -502,7 +502,7 @@ public class EventService {
 
     private void ensureManagedRegistrationAllowed(Event event, User student) {
         if (event.getStatus() == EventStatus.CANCELLED) {
-            throw new ConflictException("Cannot register participants for a cancelled event");
+            throw new ConflictException("Не можете да записвате участници за отменено събитие");
         }
 
         ensureAudienceEligibility(event, student);
@@ -521,7 +521,7 @@ public class EventService {
         );
 
         if (!isMember) {
-            throw new ConflictException("This event is available only to approved members of the club");
+            throw new ConflictException("Това събитие е достъпно само за одобрени членове на клуба");
         }
     }
 
@@ -533,7 +533,7 @@ public class EventService {
 
         long registeredCount = getRegisteredCount(event);
         if (registeredCount >= capacity) {
-            throw new ConflictException("Event capacity has been reached");
+            throw new ConflictException("Капацитетът на събитието е запълнен");
         }
     }
 
@@ -541,18 +541,18 @@ public class EventService {
         EventRegistrationId id = new EventRegistrationId(eventId, studentId);
         return eventRegistrationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Participation for event id=" + eventId + " and student id=" + studentId + " not found"
+                        "Участие за събитие с id=" + eventId + " и ученик с id=" + studentId + " не е намерено"
                 ));
     }
 
     private Event getEventOrThrow(Long id) {
         return eventRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Event with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Събитие с id=" + id + " не е намерено"));
     }
 
     private Club getClubOrThrow(Long clubId) {
         return clubRepository.findById(clubId)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + clubId + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Клуб с id=" + clubId + " не е намерен"));
     }
 
     private Event getTeacherManagedEventOrThrow(Long id) {
@@ -979,7 +979,7 @@ public class EventService {
     private User getCurrentStudent() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е ученически достъп");
         }
         return currentUser;
     }
@@ -987,7 +987,7 @@ public class EventService {
     private User getCurrentTeacher() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
         return currentUser;
     }
@@ -995,14 +995,14 @@ public class EventService {
     private User requireAdmin() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е администраторски достъп");
         }
         return currentUser;
     }
 
     private void ensureTeacherCanManageClub(User teacher, Long clubId) {
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
     }
 

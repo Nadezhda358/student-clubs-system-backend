@@ -60,18 +60,18 @@ public class S3StorageService {
 
     public String upload(MultipartFile file, String keyPrefix) {
         if (bucket == null || bucket.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket is not configured");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket не е конфигуриран");
         }
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Файлът е задължителен");
         }
         if (file.getSize() > maxFileSizeBytes) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File exceeds max size");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Файлът надвишава максималния размер");
         }
 
         String contentType = file.getContentType();
         if (contentType == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Content type is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Типът съдържание е задължителен");
         }
         contentType = contentType.toLowerCase();
         int separatorIndex = contentType.indexOf(';');
@@ -79,7 +79,7 @@ public class S3StorageService {
             contentType = contentType.substring(0, separatorIndex).trim();
         }
         if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported content type: " + contentType);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Неподдържан тип съдържание: " + contentType);
         }
 
         String extension = normalizeExtension(file.getOriginalFilename(), contentType);
@@ -100,9 +100,9 @@ public class S3StorageService {
         try (InputStream inputStream = file.getInputStream()) {
             s3Client.putObject(request, RequestBody.fromInputStream(inputStream, file.getSize()));
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to read upload", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Каченият файл не може да бъде прочетен", e);
         } catch (S3Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Файлът не може да бъде качен", e);
         }
 
         return s3Client.utilities()

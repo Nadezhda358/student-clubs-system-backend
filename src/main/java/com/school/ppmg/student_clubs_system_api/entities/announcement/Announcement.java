@@ -66,7 +66,7 @@ public class Announcement extends AuditableEntity {
     )
     private User author;
 
-    @AssertTrue(message = "publishedAt must be set when isPublished is true")
+    @AssertTrue(message = "Датата на публикуване трябва да е зададена, когато съобщението е публикувано")
     public boolean isPublishedAtValid() {
         return !Boolean.TRUE.equals(isPublished) || publishedAt != null;
     }
