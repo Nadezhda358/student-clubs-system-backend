@@ -27,7 +27,7 @@ public class TokenService {
             byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
             return Hex.encodeHexString(hash);
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
+            throw new IllegalStateException("SHA-256 не е наличен", e);
         }
     }
 }

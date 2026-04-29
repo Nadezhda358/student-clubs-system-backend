@@ -66,9 +66,9 @@ public class EventService {
     ) {
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
-                publicEventsSpecification(clubId, normalizeQuery(q), from, to, defaultUpcoming(timeFilter)),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+        Page<Event> page = findEventListingPage(
+                publicEventsSpecification(clubId, normalizeQuery(q), from, to, defaultAll(timeFilter)),
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -77,9 +77,36 @@ public class EventService {
     @Transactional(readOnly = true)
     public EventDto getPublicById(Long id) {
         Event event = eventRepository.findOne(publicEventByIdSpecification(id))
-                .orElseThrow(() -> new ResourceNotFoundException("Event with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Събитие с id=" + id + " не е намерено"));
 
         return toDto(event);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<EventListDto> getMyRegisteredPublicEvents(
+            Long clubId,
+            String q,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            EventTimeFilter timeFilter,
+            Pageable pageable
+    ) {
+        User student = getCurrentStudent();
+        EventWriteValidator.validateSearchRange(from, to);
+
+        Page<EventRegistration> page = eventRegistrationRepository.findAll(
+                myRegisteredPublicEventsSpecification(
+                        student.getId(),
+                        clubId,
+                        normalizeQuery(q),
+                        from,
+                        to,
+                        defaultAll(timeFilter)
+                ),
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
+        );
+
+        return page.map(registration -> toListDto(registration.getEvent()));
     }
 
     @Transactional(readOnly = true)
@@ -119,11 +146,11 @@ public class EventService {
 
         if (registration != null) {
             if (registration.getStatus() == RegistrationStatus.REGISTERED) {
-                throw new ConflictException("You are already registered for this event");
+                throw new ConflictException("Вече сте записани за това събитие");
             }
 
             if (registration.getStatus() != RegistrationStatus.CANCELLED) {
-                throw new ConflictException("This participation cannot be registered again");
+                throw new ConflictException("Това участие не може да бъде регистрирано отново");
             }
 
             ensureCapacityAvailable(event);
@@ -152,13 +179,13 @@ public class EventService {
         EventRegistration registration = getRegistrationOrThrow(eventId, student.getId());
 
         if (registration.getStatus() != RegistrationStatus.REGISTERED) {
-            throw new ConflictException("Only active registrations can be cancelled");
+            throw new ConflictException("Само активни регистрации могат да бъдат отменяни");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
         OffsetDateTime deadline = getEffectiveRegistrationDeadline(registration.getEvent());
         if (now.isAfter(deadline)) {
-            throw new ConflictException("Registration can no longer be cancelled after the registration deadline");
+            throw new ConflictException("Регистрацията вече не може да бъде отменена след крайния срок за записване");
         }
 
         registration.setStatus(RegistrationStatus.CANCELLED);
@@ -181,7 +208,7 @@ public class EventService {
         ensureTeacherCanManageFilteredClub(teacher, clubId);
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
+        Page<Event> page = findEventListingPage(
                 teacherEventsSpecification(
                         teacher.getId(),
                         clubId,
@@ -191,7 +218,7 @@ public class EventService {
                         defaultAll(timeFilter),
                         status
                 ),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -230,7 +257,9 @@ public class EventService {
 
     @Transactional
     public void deleteTeacherEvent(Long id) {
-        eventRepository.delete(getTeacherManagedEventOrThrow(id));
+        Event event = getTeacherManagedEventOrThrow(id);
+        eventRegistrationRepository.softDeleteByEventId(event.getId(), OffsetDateTime.now());
+        eventRepository.delete(event);
     }
 
     @Transactional
@@ -252,17 +281,33 @@ public class EventService {
         return getParticipantsForEvent(eventId, status, q, pageable);
     }
 
-    @Transactional
-    public EventParticipationDto updateTeacherParticipationStatus(
+    @Transactional(readOnly = true)
+    public Page<EventParticipationDto> getTeacherParticipations(
+            Long clubId,
             Long eventId,
-            Long studentId,
-            RegistrationStatus newStatus
+            RegistrationStatus registrationStatus,
+            EventStatus eventStatus,
+            String q,
+            EventTimeFilter timeFilter,
+            Pageable pageable
     ) {
         User teacher = getCurrentTeacher();
-        Event event = getEventOrThrow(eventId);
-        ensureTeacherCanManageClub(teacher, event.getClub().getId());
+        ensureTeacherCanManageFilteredClub(teacher, clubId);
 
-        return updateParticipationStatus(event, studentId, newStatus);
+        Page<EventRegistration> page = eventRegistrationRepository.findAll(
+                teacherParticipationsSpecification(
+                        teacher.getId(),
+                        clubId,
+                        eventId,
+                        registrationStatus,
+                        eventStatus,
+                        normalizeQuery(q),
+                        defaultAll(timeFilter)
+                ),
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
+        );
+
+        return page.map(this::toParticipationDto);
     }
 
     @Transactional(readOnly = true)
@@ -278,9 +323,9 @@ public class EventService {
         requireAdmin();
         EventWriteValidator.validateSearchRange(from, to);
 
-        Page<Event> page = eventRepository.findAll(
+        Page<Event> page = findEventListingPage(
                 adminEventsSpecification(clubId, normalizeQuery(q), from, to, defaultAll(timeFilter), status),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.ASC, "startAt"))
+                pageable
         );
 
         return page.map(this::toListDto);
@@ -319,7 +364,9 @@ public class EventService {
     @Transactional
     public void deleteAdminEvent(Long id) {
         requireAdmin();
-        eventRepository.delete(getEventOrThrow(id));
+        Event event = getEventOrThrow(id);
+        eventRegistrationRepository.softDeleteByEventId(event.getId(), OffsetDateTime.now());
+        eventRepository.delete(event);
     }
 
     @Transactional
@@ -400,6 +447,7 @@ public class EventService {
         validateManagedParticipationStatus(newStatus);
 
         EventRegistration registration = getRegistrationOrThrow(event.getId(), studentId);
+        ensureEventHasNotStarted(event);
         OffsetDateTime now = OffsetDateTime.now();
 
         if (newStatus == registration.getStatus()) {
@@ -408,7 +456,7 @@ public class EventService {
 
         if (newStatus == RegistrationStatus.REGISTERED) {
             if (registration.getStatus() != RegistrationStatus.CANCELLED) {
-                throw new ConflictException("Only cancelled participations can be reopened");
+                throw new ConflictException("Само отменени участия могат да бъдат отворени отново");
             }
 
             ensureManagedRegistrationAllowed(event, registration.getStudent());
@@ -417,7 +465,7 @@ public class EventService {
             registration.setCancelledAt(null);
         } else {
             if (registration.getStatus() != RegistrationStatus.REGISTERED) {
-                throw new ConflictException("Only active registrations can be cancelled");
+                throw new ConflictException("Само активни регистрации могат да бъдат отменяни");
             }
 
             registration.setStatus(RegistrationStatus.CANCELLED);
@@ -427,30 +475,46 @@ public class EventService {
         return toParticipationDto(eventRegistrationRepository.save(registration));
     }
 
+    private Page<Event> findEventListingPage(Specification<Event> specification, Pageable pageable) {
+        Pageable effectivePageable = pageable == null ? Pageable.unpaged() : pageable;
+        Specification<Event> effectiveSpecification = shouldApplyDefaultEventListingOrder(effectivePageable)
+                ? withUpcomingEventsFirstOrder(specification)
+                : specification;
+
+        return eventRepository.findAll(effectiveSpecification, effectivePageable);
+    }
+
     private void validateManagedParticipationStatus(RegistrationStatus status) {
         if (status == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Статусът е задължителен");
         }
 
         if (status != RegistrationStatus.REGISTERED && status != RegistrationStatus.CANCELLED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Only REGISTERED and CANCELLED statuses are supported"
+                    "Поддържат се само статуси за регистрирано и отменено участие"
             );
+        }
+    }
+
+    private void ensureEventHasNotStarted(Event event) {
+        OffsetDateTime startAt = event.getStartAt();
+        if (startAt != null && !OffsetDateTime.now().isBefore(startAt)) {
+            throw new ConflictException("Статусът на участието може да се променя само преди началото на събитието");
         }
     }
 
     private void ensureStudentCanRegister(User student, Event event) {
         if (!Boolean.TRUE.equals(event.getClub().getIsActive())) {
-            throw new ConflictException("The club for this event is inactive");
+            throw new ConflictException("Клубът на това събитие не е активен");
         }
 
         if (event.getStatus() != EventStatus.PUBLISHED) {
-            throw new ConflictException("This event is not open for student registration");
+            throw new ConflictException("Това събитие не е отворено за ученически регистрации");
         }
 
         if (OffsetDateTime.now().isAfter(getEffectiveRegistrationDeadline(event))) {
-            throw new ConflictException("Registration deadline has passed for this event");
+            throw new ConflictException("Крайният срок за записване за това събитие е изтекъл");
         }
 
         ensureAudienceEligibility(event, student);
@@ -458,7 +522,7 @@ public class EventService {
 
     private void ensureManagedRegistrationAllowed(Event event, User student) {
         if (event.getStatus() == EventStatus.CANCELLED) {
-            throw new ConflictException("Cannot register participants for a cancelled event");
+            throw new ConflictException("Не можете да записвате участници за отменено събитие");
         }
 
         ensureAudienceEligibility(event, student);
@@ -477,7 +541,7 @@ public class EventService {
         );
 
         if (!isMember) {
-            throw new ConflictException("This event is available only to approved members of the club");
+            throw new ConflictException("Това събитие е достъпно само за одобрени членове на клуба");
         }
     }
 
@@ -489,26 +553,25 @@ public class EventService {
 
         long registeredCount = getRegisteredCount(event);
         if (registeredCount >= capacity) {
-            throw new ConflictException("Event capacity has been reached");
+            throw new ConflictException("Капацитетът на събитието е запълнен");
         }
     }
 
     private EventRegistration getRegistrationOrThrow(Long eventId, Long studentId) {
-        EventRegistrationId id = new EventRegistrationId(eventId, studentId);
-        return eventRegistrationRepository.findById(id)
+        return eventRegistrationRepository.findOne(registrationByIdSpecification(eventId, studentId))
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Participation for event id=" + eventId + " and student id=" + studentId + " not found"
+                        "Участие за събитие с id=" + eventId + " и ученик с id=" + studentId + " не е намерено"
                 ));
     }
 
     private Event getEventOrThrow(Long id) {
-        return eventRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Event with id=" + id + " not found"));
+        return eventRepository.findOne(managementEventByIdSpecification(id))
+                .orElseThrow(() -> new ResourceNotFoundException("Събитие с id=" + id + " не е намерено"));
     }
 
     private Club getClubOrThrow(Long clubId) {
         return clubRepository.findById(clubId)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + clubId + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Клуб с id=" + clubId + " не е намерен"));
     }
 
     private Event getTeacherManagedEventOrThrow(Long id) {
@@ -548,11 +611,25 @@ public class EventService {
     }
 
     private Specification<Event> publicEventByIdSpecification(Long id) {
-        return (root, query, cb) -> cb.and(
-                cb.equal(root.get("id"), id),
-                cb.equal(root.get("status"), EventStatus.PUBLISHED),
-                cb.isTrue(root.join("club").get("isActive"))
-        );
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("id"), id));
+            requireAvailableClub(predicates, cb, club);
+            predicates.add(cb.equal(root.get("status"), EventStatus.PUBLISHED));
+            predicates.add(cb.isTrue(club.get("isActive")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<Event> managementEventByIdSpecification(Long id) {
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("id"), id));
+            requireAvailableClub(predicates, cb, club);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     private Specification<Event> teacherEventsSpecification(
@@ -602,6 +679,7 @@ public class EventService {
             EventStatus status
     ) {
         List<Predicate> predicates = new ArrayList<>();
+        requireAvailableClub(predicates, cb, club);
 
         if (clubId != null) {
             predicates.add(cb.equal(club.get("id"), clubId));
@@ -647,6 +725,8 @@ public class EventService {
             List<Predicate> predicates = new ArrayList<>();
 
             predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
 
             if (registrationStatus != null) {
                 predicates.add(cb.equal(root.get("status"), registrationStatus));
@@ -672,15 +752,68 @@ public class EventService {
         };
     }
 
+    private Specification<EventRegistration> myRegisteredPublicEventsSpecification(
+            Long studentId,
+            Long clubId,
+            String q,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            EventTimeFilter timeFilter
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+
+            predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            predicates.add(cb.equal(root.get("status"), RegistrationStatus.REGISTERED));
+            predicates.add(cb.equal(event.get("status"), EventStatus.PUBLISHED));
+            predicates.add(cb.isTrue(club.get("isActive")));
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            applyTimeFilter(predicates, cb, event.get("startAt"), timeFilter);
+
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(event.get("startAt"), from));
+            }
+
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(event.get("startAt"), to));
+            }
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(event.get("title")), like),
+                        cb.like(cb.lower(event.get("description")), like),
+                        cb.like(cb.lower(cb.coalesce(event.get("location"), "")), like),
+                        cb.like(cb.lower(club.get("name")), like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
     private Specification<EventRegistration> eventParticipantsSpecification(
             Long eventId,
             RegistrationStatus status,
             String q
     ) {
         return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
             Join<Object, Object> student = root.join("student");
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("event").get("id"), eventId));
+            predicates.add(cb.equal(event.get("id"), eventId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
 
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
@@ -699,7 +832,8 @@ public class EventService {
         };
     }
 
-    private Specification<EventRegistration> adminParticipationsSpecification(
+    private Specification<EventRegistration> teacherParticipationsSpecification(
+            Long teacherId,
             Long clubId,
             Long eventId,
             RegistrationStatus registrationStatus,
@@ -711,7 +845,13 @@ public class EventService {
             Join<Object, Object> event = root.join("event");
             Join<Object, Object> club = event.join("club");
             Join<Object, Object> student = root.join("student");
+            Join<Object, Object> teachers = club.join("teachers");
+
             List<Predicate> predicates = new ArrayList<>();
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+            predicates.add(cb.equal(teachers.get("teacher").get("id"), teacherId));
 
             if (clubId != null) {
                 predicates.add(cb.equal(club.get("id"), clubId));
@@ -746,6 +886,98 @@ public class EventService {
         };
     }
 
+    private Specification<EventRegistration> adminParticipationsSpecification(
+            Long clubId,
+            Long eventId,
+            RegistrationStatus registrationStatus,
+            EventStatus eventStatus,
+            String q,
+            EventTimeFilter timeFilter
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            Join<Object, Object> student = root.join("student");
+            List<Predicate> predicates = new ArrayList<>();
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            if (eventId != null) {
+                predicates.add(cb.equal(event.get("id"), eventId));
+            }
+
+            if (registrationStatus != null) {
+                predicates.add(cb.equal(root.get("status"), registrationStatus));
+            }
+
+            if (eventStatus != null) {
+                predicates.add(cb.equal(event.get("status"), eventStatus));
+            }
+
+            applyTimeFilter(predicates, cb, event.get("startAt"), timeFilter);
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                Expression<String> fullName = cb.lower(cb.concat(cb.concat(student.get("firstName"), " "), student.get("lastName")));
+                predicates.add(cb.or(
+                        cb.like(cb.lower(event.get("title")), like),
+                        cb.like(cb.lower(club.get("name")), like),
+                        cb.like(cb.lower(student.get("email")), like),
+                        cb.like(fullName, like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<EventRegistration> registrationByIdSpecification(Long eventId, Long studentId) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            Join<Object, Object> student = root.join("student");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(event.get("id"), eventId));
+            predicates.add(cb.equal(student.get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private void requireAvailableEvent(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> event
+    ) {
+        predicates.add(cb.isNotNull(event.get("id")));
+        predicates.add(cb.isNull(event.get("deletedAt")));
+    }
+
+    private void requireAvailableClub(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> club
+    ) {
+        predicates.add(cb.isNotNull(club.get("id")));
+        predicates.add(cb.isNull(club.get("deletedAt")));
+    }
+
+    private void requireAvailableUser(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> user
+    ) {
+        predicates.add(cb.isNotNull(user.get("id")));
+        predicates.add(cb.isNull(user.get("deletedAt")));
+    }
+
     private void applyTimeFilter(
             List<Predicate> predicates,
             jakarta.persistence.criteria.CriteriaBuilder cb,
@@ -773,7 +1005,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -798,7 +1030,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getCapacity(),
                 registeredCount,
                 getAvailableSpots(event, registeredCount),
@@ -824,7 +1056,7 @@ public class EventService {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getLocation(),
-                event.getMainImageUrl(),
+                resolveImageUrl(event.getMainImageUrl()),
                 event.getStatus(),
                 event.getAudience(),
                 registration.getStatus(),
@@ -866,6 +1098,10 @@ public class EventService {
         return toDto(eventRepository.save(event));
     }
 
+    private String resolveImageUrl(String value) {
+        return s3StorageService.resolveReadUrl(value);
+    }
+
     private Long getAvailableSpots(Event event, long registeredCount) {
         if (event.getCapacity() == null) {
             return null;
@@ -885,7 +1121,7 @@ public class EventService {
     private User getCurrentStudent() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е ученически достъп");
         }
         return currentUser;
     }
@@ -893,7 +1129,7 @@ public class EventService {
     private User getCurrentTeacher() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
         return currentUser;
     }
@@ -901,14 +1137,14 @@ public class EventService {
     private User requireAdmin() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е администраторски достъп");
         }
         return currentUser;
     }
 
     private void ensureTeacherCanManageClub(User teacher, Long clubId) {
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
     }
 
@@ -918,20 +1154,50 @@ public class EventService {
         }
     }
 
-    private Pageable withDefaultSort(Pageable pageable, Sort defaultSort) {
-        if (pageable == null || pageable.isUnpaged() || pageable.getSort().isSorted()) {
-            return pageable;
-        }
-
-        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
-    }
-
     private Pageable withFixedSort(Pageable pageable, Sort sort) {
         if (pageable == null || pageable.isUnpaged()) {
             return pageable;
         }
 
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+    }
+
+    private boolean shouldApplyDefaultEventListingOrder(Pageable pageable) {
+        return pageable == null || pageable.isUnpaged() || !pageable.getSort().isSorted();
+    }
+
+    private Specification<Event> withUpcomingEventsFirstOrder(Specification<Event> specification) {
+        return (root, query, cb) -> {
+            Predicate predicate = specification == null ? cb.conjunction() : specification.toPredicate(root, query, cb);
+
+            if (query != null && !isCountQuery(query)) {
+                OffsetDateTime now = OffsetDateTime.now();
+                Path<OffsetDateTime> startAt = root.get("startAt");
+                Expression<Integer> upcomingBucket = cb.<Integer>selectCase()
+                        .when(cb.greaterThanOrEqualTo(startAt, now), 0)
+                        .otherwise(1);
+                Expression<OffsetDateTime> upcomingOrder = cb.<OffsetDateTime>selectCase()
+                        .when(cb.greaterThanOrEqualTo(startAt, now), startAt)
+                        .otherwise(cb.nullLiteral(OffsetDateTime.class));
+                Expression<OffsetDateTime> pastOrder = cb.<OffsetDateTime>selectCase()
+                        .when(cb.lessThan(startAt, now), startAt)
+                        .otherwise(cb.nullLiteral(OffsetDateTime.class));
+
+                query.orderBy(
+                        cb.asc(upcomingBucket),
+                        cb.asc(upcomingOrder),
+                        cb.desc(pastOrder),
+                        cb.asc(root.get("id"))
+                );
+            }
+
+            return predicate;
+        };
+    }
+
+    private boolean isCountQuery(jakarta.persistence.criteria.CriteriaQuery<?> query) {
+        Class<?> resultType = query.getResultType();
+        return resultType == Long.class || resultType == long.class;
     }
 
     private String normalizeQuery(String q) {

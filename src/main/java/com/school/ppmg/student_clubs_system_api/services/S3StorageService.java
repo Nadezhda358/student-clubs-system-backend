@@ -9,15 +9,19 @@ import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -35,33 +39,39 @@ public class S3StorageService {
     private static final Set<String> ALLOWED_CONTENT_TYPES = CONTENT_TYPE_EXTENSIONS.keySet();
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final String bucket;
     private final long maxFileSizeBytes;
+    private final Duration getUrlTtl;
 
     public S3StorageService(
             S3Client s3Client,
+            S3Presigner s3Presigner,
             @Value("${app.s3.bucket}") String bucket,
-            @Value("${app.s3.max-file-size-bytes:10485760}") long maxFileSizeBytes
+            @Value("${app.s3.max-file-size-bytes:5242880}") long maxFileSizeBytes,
+            @Value("${app.s3.get-url-ttl-minutes:60}") long getUrlTtlMinutes
     ) {
         this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
         this.bucket = bucket;
         this.maxFileSizeBytes = maxFileSizeBytes;
+        this.getUrlTtl = Duration.ofMinutes(Math.max(getUrlTtlMinutes, 1));
     }
 
     public String upload(MultipartFile file, String keyPrefix) {
         if (bucket == null || bucket.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket is not configured");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket не е конфигуриран");
         }
         if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Файлът е задължителен");
         }
         if (file.getSize() > maxFileSizeBytes) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File exceeds max size");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Файлът надвишава максималния размер");
         }
 
         String contentType = file.getContentType();
         if (contentType == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Content type is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Типът съдържание е задължителен");
         }
         contentType = contentType.toLowerCase();
         int separatorIndex = contentType.indexOf(';');
@@ -69,7 +79,7 @@ public class S3StorageService {
             contentType = contentType.substring(0, separatorIndex).trim();
         }
         if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported content type: " + contentType);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Неподдържан тип съдържание: " + contentType);
         }
 
         String extension = normalizeExtension(file.getOriginalFilename(), contentType);
@@ -90,9 +100,9 @@ public class S3StorageService {
         try (InputStream inputStream = file.getInputStream()) {
             s3Client.putObject(request, RequestBody.fromInputStream(inputStream, file.getSize()));
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to read upload", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Каченият файл не може да бъде прочетен", e);
         } catch (S3Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Файлът не може да бъде качен", e);
         }
 
         return s3Client.utilities()
@@ -100,8 +110,35 @@ public class S3StorageService {
                 .toString();
     }
 
-    public void delete(String key) {
+    public String resolveReadUrl(String value) {
+        if (value == null || value.isBlank() || bucket == null || bucket.isBlank()) {
+            return value;
+        }
+
+        String key = extractKey(value);
         if (key == null || key.isBlank()) {
+            return value;
+        }
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build();
+
+            return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                            .signatureDuration(getUrlTtl)
+                            .getObjectRequest(getObjectRequest)
+                            .build())
+                    .url()
+                    .toString();
+        } catch (RuntimeException ignored) {
+            return value;
+        }
+    }
+
+    public void delete(String key) {
+        if (bucket == null || bucket.isBlank() || key == null || key.isBlank()) {
             return;
         }
         s3Client.deleteObject(DeleteObjectRequest.builder()
@@ -111,27 +148,16 @@ public class S3StorageService {
     }
 
     public void deleteByUrl(String url) {
-        if (url == null || url.isBlank()) {
+        if (url == null || url.isBlank() || bucket == null || bucket.isBlank()) {
             return;
         }
 
-        try {
-            URI uri = URI.create(url);
-            String path = uri.getPath();
-            if (path == null || path.isBlank()) {
-                return;
-            }
-
-            String key = path.startsWith("/") ? path.substring(1) : path;
-            String bucketPrefix = bucket + "/";
-            if (key.startsWith(bucketPrefix)) {
-                key = key.substring(bucketPrefix.length());
-            }
-
-            delete(URLDecoder.decode(key, StandardCharsets.UTF_8));
-        } catch (IllegalArgumentException ignored) {
-            // Ignore malformed URLs during best-effort cleanup.
+        String key = extractKey(url);
+        if (key == null || key.isBlank()) {
+            return;
         }
+
+        delete(key);
     }
 
     private static String normalizePrefix(String keyPrefix) {
@@ -154,5 +180,44 @@ public class S3StorageService {
             return extension.toLowerCase();
         }
         return CONTENT_TYPE_EXTENSIONS.get(contentType);
+    }
+
+    private String extractKey(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        if (!normalized.contains("://")) {
+            return normalized;
+        }
+
+        if (bucket == null || bucket.isBlank()) {
+            return null;
+        }
+
+        try {
+            URI uri = URI.create(normalized);
+            String host = uri.getHost();
+            String path = uri.getPath();
+            if (host == null || host.isBlank() || path == null || path.isBlank()) {
+                return null;
+            }
+
+            String key = path.startsWith("/") ? path.substring(1) : path;
+            String bucketPrefix = bucket + "/";
+
+            if (host.equals(bucket) || host.startsWith(bucket + ".")) {
+                return URLDecoder.decode(key, StandardCharsets.UTF_8);
+            }
+
+            if (key.startsWith(bucketPrefix)) {
+                return URLDecoder.decode(key.substring(bucketPrefix.length()), StandardCharsets.UTF_8);
+            }
+
+            return null;
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 }

@@ -23,8 +23,8 @@ public class OpenApiConfig {
     public OpenAPI studentClubsOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Student Clubs System API")
-                        .description("API documentation for managing student clubs and events.")
+                        .title("API на системата за ученически клубове")
+                        .description("Документация на API за управление на ученически клубове и събития.")
                         .version("v1"))
                 .components(new Components()
                         .addSecuritySchemes(

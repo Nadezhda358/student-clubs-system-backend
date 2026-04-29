@@ -5,6 +5,7 @@ import com.school.ppmg.student_clubs_system_api.entities.event.EventRegistration
 import com.school.ppmg.student_clubs_system_api.enums.RegistrationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,6 +21,22 @@ public interface EventRegistrationRepository
     }
 
     long countByEvent_IdAndStatus(Long eventId, RegistrationStatus status);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+            value = """
+                    update event_registrations
+                    set deleted_at = :deletedAt,
+                        updated_at = CURRENT_TIMESTAMP(6)
+                    where event_id = :eventId
+                      and deleted_at is null
+                    """,
+            nativeQuery = true
+    )
+    int softDeleteByEventId(
+            @Param("eventId") Long eventId,
+            @Param("deletedAt") OffsetDateTime deletedAt
+    );
 
     @Query(
             value = """

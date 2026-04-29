@@ -15,6 +15,13 @@ import java.util.Optional;
 public interface ClubMembershipRepository
         extends JpaRepository<ClubMembership, ClubMembershipId>, JpaSpecificationExecutor<ClubMembership> {
 
+    interface ClubParticipantsByClubRow {
+        Long getClubId();
+        String getClubName();
+        Boolean getActive();
+        Long getParticipantsCount();
+    }
+
     List<ClubMembership> findByStudent_Id(Long studentId);
 
     List<ClubMembership> findByClub_Id(Long clubId);
@@ -76,4 +83,23 @@ public interface ClubMembershipRepository
             nativeQuery = true
     )
     long countDistinctStudentsByStatus(@Param("status") String status);
+
+    @Query(
+            value = """
+                    select c.id as clubId,
+                           c.name as clubName,
+                           c.is_active as active,
+                           coalesce(count(cm.student_user_id), 0) as participantsCount
+                    from clubs c
+                    left join club_memberships cm
+                           on cm.club_id = c.id
+                          and cm.deleted_at is null
+                          and cm.status = 'ACTIVE'
+                    where c.deleted_at is null
+                    group by c.id, c.name, c.is_active
+                    order by participantsCount desc, clubName asc
+                    """,
+            nativeQuery = true
+    )
+    List<ClubParticipantsByClubRow> summarizeParticipantsByClub();
 }

@@ -49,11 +49,11 @@ public class ClubMembershipRequestService {
         Club club = clubRepository.findById(clubId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Club with id=" + clubId + " not found"
+                        "Клуб с id=" + clubId + " не е намерен"
                 ));
 
         if (!Boolean.TRUE.equals(club.getIsActive())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Club is inactive");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Клубът е неактивен");
         }
 
         boolean pendingExists = clubMembershipRequestRepository.existsByClub_IdAndStudent_IdAndStatus(
@@ -64,7 +64,7 @@ public class ClubMembershipRequestService {
         if (pendingExists) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Pending membership application already exists for this club"
+                    "Вече има чакаща кандидатура за членство в този клуб"
             );
         }
 
@@ -76,7 +76,7 @@ public class ClubMembershipRequestService {
         if (activeMembershipExists) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "You are already an active member of this club"
+                    "Вече сте активен член на този клуб"
             );
         }
 
@@ -88,7 +88,7 @@ public class ClubMembershipRequestService {
         if (bannedMembershipExists) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "You are banned from this club"
+                    "Достъпът ви до този клуб е забранен"
             );
         }
 
@@ -127,15 +127,15 @@ public class ClubMembershipRequestService {
         ClubMembershipRequest application = clubMembershipRequestRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Membership application with id=" + id + " not found"
+                        "Кандидатура за членство с id=" + id + " не е намерена"
                 ));
 
         if (!application.getStudent().getId().equals(currentUser.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can cancel only your own membership applications");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Можете да отменяте само собствените си кандидатури за членство");
         }
 
         if (application.getStatus() != MembershipRequestStatus.PENDING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only pending membership applications can be cancelled");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Само чакащи кандидатури за членство могат да бъдат отменяни");
         }
 
         application.setStatus(MembershipRequestStatus.CANCELLED);
@@ -190,14 +190,14 @@ public class ClubMembershipRequestService {
 
     private void requireStudent(User user) {
         if (user.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can manage membership applications");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Само ученици могат да управляват кандидатури за членство");
         }
     }
 
     private User getCurrentTeacher() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
         return currentUser;
     }
@@ -208,7 +208,7 @@ public class ClubMembershipRequestService {
         }
 
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
     }
 
@@ -223,11 +223,11 @@ public class ClubMembershipRequestService {
         ClubMembershipRequest application = clubMembershipRequestRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Membership application with id=" + id + " not found"
+                        "Кандидатура за членство с id=" + id + " не е намерена"
                 ));
 
         if (application.getStatus() != MembershipRequestStatus.PENDING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Membership application is already decided");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "По тази кандидатура за членство вече има решение");
         }
 
         return application;
@@ -235,11 +235,11 @@ public class ClubMembershipRequestService {
 
     private void validateNewStatus(MembershipRequestStatus newStatus) {
         if (newStatus == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Статусът е задължителен");
         }
 
         if (newStatus != MembershipRequestStatus.APPROVED && newStatus != MembershipRequestStatus.REJECTED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be APPROVED or REJECTED");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Статусът трябва да означава одобрение или отхвърляне");
         }
     }
 
@@ -270,7 +270,7 @@ public class ClubMembershipRequestService {
         if (membership.getStatus() == MembershipStatus.BANNED) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Banned memberships cannot be approved via membership applications"
+                    "Забранени членства не могат да бъдат одобрявани чрез кандидатури за членство"
             );
         }
 
@@ -304,7 +304,7 @@ public class ClubMembershipRequestService {
 
             ClubMembership restoredMembership = clubMembershipRepository.findByStudent_IdAndClub_Id(studentId, clubId)
                     .orElseThrow(() -> new IllegalStateException(
-                            "Membership restore failed for club id=" + clubId + " and student id=" + studentId
+                            "Възстановяването на членство не успя за клуб с id=" + clubId + " и ученик с id=" + studentId
                     ));
 
             return new MembershipActivation(restoredMembership, true);
@@ -331,6 +331,7 @@ public class ClubMembershipRequestService {
             Join<Object, Object> club = root.join("club");
             List<Predicate> predicates = new java.util.ArrayList<>();
             predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            predicates.add(cb.isNull(club.get("deletedAt")));
 
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
@@ -362,6 +363,8 @@ public class ClubMembershipRequestService {
             Join<Object, Object> club = root.join("club");
             Join<Object, Object> student = root.join("student");
             List<Predicate> predicates = new java.util.ArrayList<>();
+            predicates.add(cb.isNull(club.get("deletedAt")));
+            predicates.add(cb.isNull(student.get("deletedAt")));
 
             if (teacherId != null) {
                 query.distinct(true);

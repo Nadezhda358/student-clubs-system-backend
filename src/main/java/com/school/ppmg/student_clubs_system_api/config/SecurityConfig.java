@@ -64,6 +64,26 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/clubs/*/main-image")
                         .hasRole("ADMIN")
 
+                        // Club media management - ADMIN only
+                        .requestMatchers(HttpMethod.POST, "/api/clubs/*/media")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/clubs/*/media/*")
+                        .hasRole("ADMIN")
+
+                        // Teachers may remove media only from assigned clubs.
+                        .requestMatchers(HttpMethod.DELETE, "/api/teacher/clubs/*/media/*")
+                        .hasRole("TEACHER")
+
+                        // Teachers can manage assigned club details, but must not delete clubs.
+                        .requestMatchers(HttpMethod.DELETE, "/api/teacher/clubs/**")
+                        .denyAll()
+
+                        // Teachers can view event registrations, but cannot change participation status.
+                        .requestMatchers(HttpMethod.POST, "/api/teacher/events/*/participants/*")
+                        .denyAll()
+                        .requestMatchers(HttpMethod.PATCH, "/api/teacher/events/*/participants/*")
+                        .denyAll()
+
                         // Teacher endpoints
                         .requestMatchers("/api/teacher/**")
                         .hasRole("TEACHER")

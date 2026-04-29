@@ -4,9 +4,11 @@ import com.school.ppmg.student_clubs_system_api.entities.club.ClubMembershipRequ
 import com.school.ppmg.student_clubs_system_api.enums.MembershipRequestStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 public interface ClubMembershipRequestRepository
@@ -29,4 +31,16 @@ public interface ClubMembershipRequestRepository
             Long studentId,
             MembershipRequestStatus status
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+            value = """
+                    update club_membership_requests
+                    set deleted_at = :deletedAt
+                    where club_id = :clubId
+                      and deleted_at is null
+                    """,
+            nativeQuery = true
+    )
+    int softDeleteByClubId(@Param("clubId") Long clubId, @Param("deletedAt") OffsetDateTime deletedAt);
 }

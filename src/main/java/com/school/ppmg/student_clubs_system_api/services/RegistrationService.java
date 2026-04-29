@@ -30,7 +30,7 @@ public class RegistrationService {
     public UserDto registerStudent(RegisterStudentRequest request) {
         String email = request.email().trim();
         if (userRepository.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Този имейл вече съществува");
         }
 
         User user = new User();
@@ -51,20 +51,20 @@ public class RegistrationService {
         String tokenHash = tokenService.hashToken(request.token().trim());
 
         TeacherInvite invite = teacherInviteRepository.findByTokenHashForUpdate(tokenHash)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid invite token"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Невалиден код от покана"));
 
         if (invite.getUsedAt() != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invite already used");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Поканата вече е използвана");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
         if (!invite.getExpiresAt().isAfter(now)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invite expired");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Поканата е изтекла");
         }
 
         String email = invite.getEmail();
         if (userRepository.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Този имейл вече съществува");
         }
 
         User user = new User();

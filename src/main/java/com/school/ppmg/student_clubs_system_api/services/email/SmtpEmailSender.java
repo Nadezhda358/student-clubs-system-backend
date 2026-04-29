@@ -17,10 +17,10 @@ public class SmtpEmailSender implements EmailSender {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.teacher-invite.from-email")
+    @Value("${app.teacher-invite.from-email}")
     private String fromEmail;
 
-    @Value("${app.teacher-invite.subject:Teacher account invitation}")
+    @Value("${app.teacher-invite.subject:Покана за учителски профил}")
     private String inviteSubject;
 
 
@@ -40,10 +40,10 @@ public class SmtpEmailSender implements EmailSender {
             helper.setSubject(inviteSubject);
 
             String plain = """
-                    Teacher account invitation
+                    Покана за учителски профил
 
-                    You have been invited to create a teacher account on ClubsHub.
-                    Complete registration here:
+                    Поканени сте да създадете учителски профил в ClubsHub.
+                    Завършете регистрацията тук:
                     %s
                     """.formatted(inviteLink);
 
@@ -58,7 +58,7 @@ public class SmtpEmailSender implements EmailSender {
 
             mailSender.send(msg);
         } catch (MessagingException ex) {
-            throw new RuntimeException("Failed to send teacher invite email", ex);
+            throw new RuntimeException("Имейлът с покана за учител не може да бъде изпратен", ex);
         }
     }
 
@@ -81,7 +81,7 @@ public class SmtpEmailSender implements EmailSender {
                 </td>
                 <td align="right" style="vertical-align:middle;">
                   <span style="display:inline-block;padding:8px 12px;border-radius:999px;background:#F2D34C;color:#2E2225;font-size:12px;letter-spacing:.7px;">
-                    STUDENT LIFE
+                    УЧЕНИЧЕСКИ ЖИВОТ
                   </span>
                 </td>
               </tr>
@@ -91,19 +91,19 @@ public class SmtpEmailSender implements EmailSender {
 
         <tr>
           <td style="padding:26px 22px;">
-            <h1 style="margin:0 0 10px 0;font-size:22px;color:#2E2225;">Teacher account invitation</h1>
+            <h1 style="margin:0 0 10px 0;font-size:22px;color:#2E2225;">Покана за учителски профил</h1>
             <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#3A2A2F;">
-              You’ve been invited to create a <b>teacher account</b> on <b>ClubsHub</b>.
+              Поканени сте да създадете <b>учителски профил</b> в <b>ClubsHub</b>.
             </p>
 
             <a href="{{INVITE_LINK}}"
                style="display:inline-block;background:#754FAB;color:#ffffff;text-decoration:none;
                       padding:12px 18px;border-radius:12px;font-size:15px;font-weight:700;">
-              Complete registration
+              Завърши регистрацията
             </a>
 
             <p style="margin:18px 0 6px 0;font-size:12.5px;color:#5A4A50;">
-              If the button doesn’t work, copy and paste this link:
+              Ако бутонът не работи, копирайте и поставете тази връзка:
             </p>
             <p style="margin:0;font-size:12.5px;word-break:break-all;">
               <a href="{{INVITE_LINK}}" style="color:#3B2A72;">{{INVITE_LINK}}</a>
@@ -113,7 +113,7 @@ public class SmtpEmailSender implements EmailSender {
 
         <tr>
           <td style="padding:14px 22px;background:#F7F2FF;font-size:12px;color:#5A4A50;">
-            © {{YEAR}} ClubsHub · Student Clubs & Campus Events
+            © {{YEAR}} ClubsHub · Ученически клубове и училищни събития
           </td>
         </tr>
 

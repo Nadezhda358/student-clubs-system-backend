@@ -58,7 +58,7 @@ public class AnnouncementService {
     @Transactional(readOnly = true)
     public AnnouncementDto getPublicAnnouncementById(Long id) {
         Announcement announcement = announcementRepository.findOne(publicAnnouncementByIdSpecification(id))
-                .orElseThrow(() -> new ResourceNotFoundException("Announcement with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Съобщение с id=" + id + " не е намерено"));
 
         return toDto(announcement);
     }
@@ -78,7 +78,7 @@ public class AnnouncementService {
 
         Page<Announcement> page = announcementRepository.findAll(
                 managementAnnouncementsSpecification(teacher.getId(), clubId, published, normalizeQuery(q), from, to),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "publishedAt", "createdAt"))
         );
 
         return page.map(this::toDto);
@@ -132,7 +132,7 @@ public class AnnouncementService {
 
         Page<Announcement> page = announcementRepository.findAll(
                 managementAnnouncementsSpecification(null, clubId, published, normalizeQuery(q), from, to),
-                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "createdAt"))
+                withDefaultSort(pageable, Sort.by(Sort.Direction.DESC, "publishedAt", "createdAt"))
         );
 
         return page.map(this::toDto);
@@ -141,7 +141,7 @@ public class AnnouncementService {
     @Transactional(readOnly = true)
     public AnnouncementDto getAdminAnnouncementById(Long id) {
         requireAdmin();
-        return toDto(getAnnouncementOrThrow(id));
+        return toDto(getAnnouncementWithAvailableClubOrThrow(id));
     }
 
     @Transactional
@@ -159,7 +159,7 @@ public class AnnouncementService {
     @Transactional
     public AnnouncementDto updateAdminAnnouncement(Long id, UpsertAnnouncementDto dto) {
         requireAdmin();
-        Announcement announcement = getAnnouncementOrThrow(id);
+        Announcement announcement = getAnnouncementWithAvailableClubOrThrow(id);
         applyUpsert(announcement, dto);
         return toDto(announcementRepository.save(announcement));
     }
@@ -167,23 +167,23 @@ public class AnnouncementService {
     @Transactional
     public void deleteAdminAnnouncement(Long id) {
         requireAdmin();
-        announcementRepository.delete(getAnnouncementOrThrow(id));
+        announcementRepository.delete(getAnnouncementWithAvailableClubOrThrow(id));
     }
 
-    private Announcement getAnnouncementOrThrow(Long id) {
-        return announcementRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Announcement with id=" + id + " not found"));
+    private Announcement getAnnouncementWithAvailableClubOrThrow(Long id) {
+        return announcementRepository.findOne(managementAnnouncementByIdSpecification(id))
+                .orElseThrow(() -> new ResourceNotFoundException("Съобщение с id=" + id + " не е намерено"));
     }
 
     private Announcement getTeacherManagedAnnouncementOrThrow(Long id) {
-        Announcement announcement = getAnnouncementOrThrow(id);
+        Announcement announcement = getAnnouncementWithAvailableClubOrThrow(id);
         ensureTeacherCanManageClub(getCurrentTeacher(), announcement.getClub().getId());
         return announcement;
     }
 
     private Club getClubOrThrow(Long id) {
         return clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Клуб с id=" + id + " не е намерен"));
     }
 
     private void applyUpsert(Announcement announcement, UpsertAnnouncementDto dto) {
@@ -216,6 +216,7 @@ public class AnnouncementService {
         return (root, query, cb) -> {
             Join<Object, Object> club = root.join("club");
             List<Predicate> predicates = new ArrayList<>();
+            requireAvailableClub(predicates, cb, club);
             predicates.add(cb.isTrue(root.get("isPublished")));
             predicates.add(cb.isTrue(club.get("isActive")));
 
@@ -225,11 +226,26 @@ public class AnnouncementService {
     }
 
     private Specification<Announcement> publicAnnouncementByIdSpecification(Long id) {
-        return (root, query, cb) -> cb.and(
-                cb.equal(root.get("id"), id),
-                cb.isTrue(root.get("isPublished")),
-                cb.isTrue(root.join("club").get("isActive"))
-        );
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            return cb.and(
+                    cb.equal(root.get("id"), id),
+                    cb.isNotNull(club.get("id")),
+                    cb.isNull(club.get("deletedAt")),
+                    cb.isTrue(root.get("isPublished")),
+                    cb.isTrue(club.get("isActive"))
+            );
+        };
+    }
+
+    private Specification<Announcement> managementAnnouncementByIdSpecification(Long id) {
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("id"), id));
+            requireAvailableClub(predicates, cb, club);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     private Specification<Announcement> managementAnnouncementsSpecification(
@@ -243,6 +259,7 @@ public class AnnouncementService {
         return (root, query, cb) -> {
             Join<Object, Object> club = root.join("club");
             List<Predicate> predicates = new ArrayList<>();
+            requireAvailableClub(predicates, cb, club);
 
             if (teacherId != null) {
                 query.distinct(true);
@@ -256,6 +273,15 @@ public class AnnouncementService {
             applyCommonFilters(predicates, cb, root, club, clubId, q, from, to, false);
             return cb.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    private void requireAvailableClub(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> club
+    ) {
+        predicates.add(cb.isNotNull(club.get("id")));
+        predicates.add(cb.isNull(club.get("deletedAt")));
     }
 
     private void applyCommonFilters(
@@ -315,7 +341,7 @@ public class AnnouncementService {
     private User getCurrentTeacher() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
         return currentUser;
     }
@@ -323,7 +349,7 @@ public class AnnouncementService {
     private User requireAdmin() {
         User currentUser = authService.getCurrentUser();
         if (currentUser.getRole() != UserRole.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е администраторски достъп");
         }
         return currentUser;
     }
@@ -334,7 +360,7 @@ public class AnnouncementService {
         }
 
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(clubId, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
     }
 

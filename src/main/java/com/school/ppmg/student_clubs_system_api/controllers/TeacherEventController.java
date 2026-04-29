@@ -3,7 +3,6 @@ package com.school.ppmg.student_clubs_system_api.controllers;
 import com.school.ppmg.student_clubs_system_api.dtos.event.EventDto;
 import com.school.ppmg.student_clubs_system_api.dtos.event.EventListDto;
 import com.school.ppmg.student_clubs_system_api.dtos.event.EventParticipationDto;
-import com.school.ppmg.student_clubs_system_api.dtos.event.UpdateEventParticipationStatusRequest;
 import com.school.ppmg.student_clubs_system_api.dtos.event.UpsertEventDto;
 import com.school.ppmg.student_clubs_system_api.enums.EventStatus;
 import com.school.ppmg.student_clubs_system_api.enums.EventTimeFilter;
@@ -18,7 +17,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -49,6 +47,27 @@ public class TeacherEventController {
             Pageable pageable
     ) {
         return eventService.getTeacherEvents(clubId, q, from, to, timeFilter, status, pageable);
+    }
+
+    @GetMapping("/event-participations")
+    public Page<EventParticipationDto> getTeacherParticipations(
+            @RequestParam(required = false) Long clubId,
+            @RequestParam(required = false) Long eventId,
+            @RequestParam(required = false) RegistrationStatus registrationStatus,
+            @RequestParam(required = false) EventStatus eventStatus,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) EventTimeFilter timeFilter,
+            Pageable pageable
+    ) {
+        return eventService.getTeacherParticipations(
+                clubId,
+                eventId,
+                registrationStatus,
+                eventStatus,
+                q,
+                timeFilter,
+                pageable
+        );
     }
 
     @GetMapping("/{id}")
@@ -92,14 +111,5 @@ public class TeacherEventController {
             Pageable pageable
     ) {
         return eventService.getTeacherParticipants(id, status, q, pageable);
-    }
-
-    @PatchMapping("/{eventId}/participants/{studentId}")
-    public EventParticipationDto updateTeacherParticipationStatus(
-            @PathVariable Long eventId,
-            @PathVariable Long studentId,
-            @Valid @RequestBody UpdateEventParticipationStatusRequest request
-    ) {
-        return eventService.updateTeacherParticipationStatus(eventId, studentId, request.status());
     }
 }

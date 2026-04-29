@@ -13,9 +13,11 @@ import com.school.ppmg.student_clubs_system_api.exceptions.ConflictException;
 import com.school.ppmg.student_clubs_system_api.exceptions.ResourceNotFoundException;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMediaRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.ClubMembershipRequestRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.ClubTeacherRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.EventRepository;
+import com.school.ppmg.student_clubs_system_api.repositories.AnnouncementRepository;
 import com.school.ppmg.student_clubs_system_api.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -46,7 +48,9 @@ public class ClubService {
     private final ClubTeacherRepository clubTeacherRepository;
     private final ClubMediaRepository clubMediaRepository;
     private final ClubMembershipRepository clubMembershipRepository;
+    private final ClubMembershipRequestRepository clubMembershipRequestRepository;
     private final EventRepository eventRepository;
+    private final AnnouncementRepository announcementRepository;
     private final UserRepository userRepository;
     private final AuthService authService;
     private final S3StorageService s3StorageService;
@@ -91,7 +95,7 @@ public class ClubService {
         Club club = getClubOrThrow(id);
 
         if (!Boolean.TRUE.equals(club.getIsActive()) && !canViewInactiveClubs()) {
-            throw new ResourceNotFoundException("Club with id=" + id + " not found");
+            throw new ResourceNotFoundException("Клуб с id=" + id + " не е намерен");
         }
 
         return toDto(club);
@@ -110,7 +114,7 @@ public class ClubService {
     @Transactional
     public ClubDto create(CreateClubDto dto, CreateClubOptions options) {
         if (clubRepository.existsByName(dto.name())) {
-            throw new ConflictException("Club name already exists: " + dto.name());
+            throw new ConflictException("Вече съществува клуб с име: " + dto.name());
         }
 
         CreateClubOptions effectiveOptions = options == null
@@ -150,7 +154,9 @@ public class ClubService {
         Club club = getClubOrThrow(id);
         OffsetDateTime deletedAt = OffsetDateTime.now();
         eventRepository.cancelFutureEventsForClub(club.getId(), deletedAt);
+        announcementRepository.softDeleteByClubId(club.getId(), deletedAt);
         clubMembershipRepository.markActiveMembershipsAsLeftForClub(club.getId(), deletedAt);
+        clubMembershipRequestRepository.softDeleteByClubId(club.getId(), deletedAt);
         clubRepository.delete(club);
     }
 
@@ -195,6 +201,26 @@ public class ClubService {
         return updateClubMainImage(getManagedClubOrThrow(id), file);
     }
 
+    @Transactional
+    public ClubDto addMedia(Long id, List<MultipartFile> files) {
+        return addClubMedia(getClubOrThrow(id), files);
+    }
+
+    @Transactional
+    public ClubDto addManagedMedia(Long id, List<MultipartFile> files) {
+        return addClubMedia(getManagedClubOrThrow(id), files);
+    }
+
+    @Transactional
+    public void removeMedia(Long id, Long mediaId) {
+        removeClubMedia(getClubOrThrow(id), mediaId);
+    }
+
+    @Transactional
+    public void removeManagedMedia(Long id, Long mediaId) {
+        removeClubMedia(getManagedClubOrThrow(id), mediaId);
+    }
+
     private ClubDto updateClub(Club club, ClubWriteRequest dto) {
         ensureNameIsAvailable(dto.name(), club.getId());
         applyUpsert(club, dto);
@@ -207,9 +233,39 @@ public class ClubService {
         return toDto(clubRepository.save(club));
     }
 
+    private ClubDto addClubMedia(Club club, List<MultipartFile> mediaFiles) {
+        List<MultipartFile> files = normalizeFiles(mediaFiles);
+        if (files.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Изберете поне едно изображение за качване");
+        }
+
+        List<String> uploadedUrls = new ArrayList<>();
+        try {
+            saveClubMedia(club, files, uploadedUrls);
+            return toDto(clubRepository.save(club));
+        } catch (RuntimeException ex) {
+            cleanupUploadedFiles(uploadedUrls);
+            throw ex;
+        }
+    }
+
+    private void removeClubMedia(Club club, Long mediaId) {
+        ClubMedia media = clubMediaRepository.findByIdAndClub_Id(mediaId, club.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Медия с id=" + mediaId + " не е намерена"));
+        String mediaUrl = media.getUrl();
+
+        clubMediaRepository.delete(media);
+
+        try {
+            s3StorageService.deleteByUrl(mediaUrl);
+        } catch (RuntimeException ignored) {
+            // Removing the database record is enough to hide the media from the club.
+        }
+    }
+
     private Club getClubOrThrow(Long id) {
         return clubRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Club with id=" + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Клуб с id=" + id + " не е намерен"));
     }
 
     private Club getManagedClubOrThrow(Long id) {
@@ -217,7 +273,7 @@ public class ClubService {
         User teacher = getCurrentTeacher();
 
         if (!clubTeacherRepository.existsByClub_IdAndTeacher_Id(id, teacher.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not manage this club");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Не управлявате този клуб");
         }
 
         return club;
@@ -227,7 +283,7 @@ public class ClubService {
         User currentUser = authService.getCurrentUser();
 
         if (currentUser.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е учителски достъп");
         }
 
         return currentUser;
@@ -237,7 +293,7 @@ public class ClubService {
         User currentUser = authService.getCurrentUser();
 
         if (currentUser.getRole() != UserRole.STUDENT) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student access required");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Необходим е ученически достъп");
         }
 
         return currentUser;
@@ -245,7 +301,7 @@ public class ClubService {
 
     private void ensureNameIsAvailable(String name, Long clubId) {
         if (clubRepository.existsByNameAndIdNot(name, clubId)) {
-            throw new ConflictException("Club name already exists: " + name);
+            throw new ConflictException("Вече съществува клуб с име: " + name);
         }
     }
 
@@ -265,7 +321,7 @@ public class ClubService {
                 club.getName(),
                 club.getRoom(),
                 club.getIsActive(),
-                club.getMainImageUrl()
+                resolveImageUrl(club.getMainImageUrl())
         );
     }
 
@@ -289,7 +345,7 @@ public class ClubService {
                         .thenComparing(ClubMedia::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(item -> new MediaDto(
                         item.getId(),
-                        item.getUrl()
+                        resolveImageUrl(item.getUrl())
                 ))
                 .toList();
 
@@ -301,7 +357,7 @@ public class ClubService {
                 club.getRoom(),
                 club.getContactEmail(),
                 club.getContactPhone(),
-                club.getMainImageUrl(),
+                resolveImageUrl(club.getMainImageUrl()),
                 club.getIsActive(),
                 club.getCreatedBy() != null ? club.getCreatedBy().getId() : null,
                 club.getCreatedAt(),
@@ -319,10 +375,10 @@ public class ClubService {
 
     private User getTeacherOrThrow(Long teacherId) {
         User teacher = userRepository.findById(teacherId)
-                .orElseThrow(() -> new ResourceNotFoundException("Teacher with id=" + teacherId + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Учител с id=" + teacherId + " не е намерен"));
 
         if (teacher.getRole() != UserRole.TEACHER) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User with id=" + teacherId + " is not a teacher");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Потребител с id=" + teacherId + " не е учител");
         }
 
         return teacher;
@@ -402,6 +458,10 @@ public class ClubService {
                 // Ignore cleanup failures and preserve the original exception.
             }
         }
+    }
+
+    private String resolveImageUrl(String value) {
+        return s3StorageService.resolveReadUrl(value);
     }
 
     private boolean canViewInactiveClubs() {

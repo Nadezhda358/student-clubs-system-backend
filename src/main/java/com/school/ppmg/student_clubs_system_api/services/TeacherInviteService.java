@@ -68,7 +68,7 @@ public class TeacherInviteService {
         if (responses.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "No invites were created"
+                    "Не бяха създадени покани"
             );
         }
 
