@@ -144,6 +144,22 @@ Once the app is running:
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 
+### Seeded Test Accounts
+
+Migration `V21__seed_bulgarian_test_data.sql` adds believable Bulgarian demo data to every active table in the schema.
+
+All seeded users currently use the same password:
+
+```text
+Parola2026!
+```
+
+Seeded login accounts:
+
+- Admin: `maria.nikolova@ppmg-vratsa.bg`
+- Teachers: `daniela.georgieva@ppmg-vratsa.bg`, `nikolay.hristov@ppmg-vratsa.bg`, `milena.todorova@ppmg-vratsa.bg`, `elitsa.stoyanova@ppmg-vratsa.bg`, `viktor.petrov@ppmg-vratsa.bg`
+- Students: `petar.ivanov@student.ppmg-vratsa.bg`, `aleks.borisov@student.ppmg-vratsa.bg`, `viktoriya.dimitrova@student.ppmg-vratsa.bg`, `simona.ilieva@student.ppmg-vratsa.bg`, `georgi.kolev@student.ppmg-vratsa.bg`, `niya.marinova@student.ppmg-vratsa.bg`, `stefan.genov@student.ppmg-vratsa.bg`, `radostina.peneva@student.ppmg-vratsa.bg`
+
 ## Configuration
 
 ### Environment Variables and Properties
