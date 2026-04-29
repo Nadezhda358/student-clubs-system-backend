@@ -17,6 +17,8 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/clubs")
@@ -94,5 +96,22 @@ public class ClubController {
             @RequestParam("file") MultipartFile file
     ) {
         return clubService.updateMainImage(id, file);
+    }
+
+    @PostMapping(value = "/{id}/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ClubDto addMedia(
+            @PathVariable Long id,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        return clubService.addMedia(id, files);
+    }
+
+    @DeleteMapping("/{id}/media/{mediaId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeMedia(
+            @PathVariable Long id,
+            @PathVariable Long mediaId
+    ) {
+        clubService.removeMedia(id, mediaId);
     }
 }

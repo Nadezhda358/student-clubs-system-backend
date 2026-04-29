@@ -257,7 +257,9 @@ public class EventService {
 
     @Transactional
     public void deleteTeacherEvent(Long id) {
-        eventRepository.delete(getTeacherManagedEventOrThrow(id));
+        Event event = getTeacherManagedEventOrThrow(id);
+        eventRegistrationRepository.softDeleteByEventId(event.getId(), OffsetDateTime.now());
+        eventRepository.delete(event);
     }
 
     @Transactional
@@ -279,17 +281,33 @@ public class EventService {
         return getParticipantsForEvent(eventId, status, q, pageable);
     }
 
-    @Transactional
-    public EventParticipationDto updateTeacherParticipationStatus(
+    @Transactional(readOnly = true)
+    public Page<EventParticipationDto> getTeacherParticipations(
+            Long clubId,
             Long eventId,
-            Long studentId,
-            RegistrationStatus newStatus
+            RegistrationStatus registrationStatus,
+            EventStatus eventStatus,
+            String q,
+            EventTimeFilter timeFilter,
+            Pageable pageable
     ) {
         User teacher = getCurrentTeacher();
-        Event event = getEventOrThrow(eventId);
-        ensureTeacherCanManageClub(teacher, event.getClub().getId());
+        ensureTeacherCanManageFilteredClub(teacher, clubId);
 
-        return updateParticipationStatus(event, studentId, newStatus);
+        Page<EventRegistration> page = eventRegistrationRepository.findAll(
+                teacherParticipationsSpecification(
+                        teacher.getId(),
+                        clubId,
+                        eventId,
+                        registrationStatus,
+                        eventStatus,
+                        normalizeQuery(q),
+                        defaultAll(timeFilter)
+                ),
+                withFixedSort(pageable, Sort.by(Sort.Direction.ASC, "event_startAt"))
+        );
+
+        return page.map(this::toParticipationDto);
     }
 
     @Transactional(readOnly = true)
@@ -346,7 +364,9 @@ public class EventService {
     @Transactional
     public void deleteAdminEvent(Long id) {
         requireAdmin();
-        eventRepository.delete(getEventOrThrow(id));
+        Event event = getEventOrThrow(id);
+        eventRegistrationRepository.softDeleteByEventId(event.getId(), OffsetDateTime.now());
+        eventRepository.delete(event);
     }
 
     @Transactional
@@ -538,15 +558,14 @@ public class EventService {
     }
 
     private EventRegistration getRegistrationOrThrow(Long eventId, Long studentId) {
-        EventRegistrationId id = new EventRegistrationId(eventId, studentId);
-        return eventRegistrationRepository.findById(id)
+        return eventRegistrationRepository.findOne(registrationByIdSpecification(eventId, studentId))
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Участие за събитие с id=" + eventId + " и ученик с id=" + studentId + " не е намерено"
                 ));
     }
 
     private Event getEventOrThrow(Long id) {
-        return eventRepository.findById(id)
+        return eventRepository.findOne(managementEventByIdSpecification(id))
                 .orElseThrow(() -> new ResourceNotFoundException("Събитие с id=" + id + " не е намерено"));
     }
 
@@ -592,11 +611,25 @@ public class EventService {
     }
 
     private Specification<Event> publicEventByIdSpecification(Long id) {
-        return (root, query, cb) -> cb.and(
-                cb.equal(root.get("id"), id),
-                cb.equal(root.get("status"), EventStatus.PUBLISHED),
-                cb.isTrue(root.join("club").get("isActive"))
-        );
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("id"), id));
+            requireAvailableClub(predicates, cb, club);
+            predicates.add(cb.equal(root.get("status"), EventStatus.PUBLISHED));
+            predicates.add(cb.isTrue(club.get("isActive")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<Event> managementEventByIdSpecification(Long id) {
+        return (root, query, cb) -> {
+            Join<Object, Object> club = root.join("club");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("id"), id));
+            requireAvailableClub(predicates, cb, club);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     private Specification<Event> teacherEventsSpecification(
@@ -646,6 +679,7 @@ public class EventService {
             EventStatus status
     ) {
         List<Predicate> predicates = new ArrayList<>();
+        requireAvailableClub(predicates, cb, club);
 
         if (clubId != null) {
             predicates.add(cb.equal(club.get("id"), clubId));
@@ -691,6 +725,8 @@ public class EventService {
             List<Predicate> predicates = new ArrayList<>();
 
             predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
 
             if (registrationStatus != null) {
                 predicates.add(cb.equal(root.get("status"), registrationStatus));
@@ -730,6 +766,8 @@ public class EventService {
             List<Predicate> predicates = new ArrayList<>();
 
             predicates.add(cb.equal(root.get("student").get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
             predicates.add(cb.equal(root.get("status"), RegistrationStatus.REGISTERED));
             predicates.add(cb.equal(event.get("status"), EventStatus.PUBLISHED));
             predicates.add(cb.isTrue(club.get("isActive")));
@@ -768,9 +806,14 @@ public class EventService {
             String q
     ) {
         return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
             Join<Object, Object> student = root.join("student");
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("event").get("id"), eventId));
+            predicates.add(cb.equal(event.get("id"), eventId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
 
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
@@ -789,7 +832,8 @@ public class EventService {
         };
     }
 
-    private Specification<EventRegistration> adminParticipationsSpecification(
+    private Specification<EventRegistration> teacherParticipationsSpecification(
+            Long teacherId,
             Long clubId,
             Long eventId,
             RegistrationStatus registrationStatus,
@@ -801,7 +845,13 @@ public class EventService {
             Join<Object, Object> event = root.join("event");
             Join<Object, Object> club = event.join("club");
             Join<Object, Object> student = root.join("student");
+            Join<Object, Object> teachers = club.join("teachers");
+
             List<Predicate> predicates = new ArrayList<>();
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+            predicates.add(cb.equal(teachers.get("teacher").get("id"), teacherId));
 
             if (clubId != null) {
                 predicates.add(cb.equal(club.get("id"), clubId));
@@ -834,6 +884,98 @@ public class EventService {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    private Specification<EventRegistration> adminParticipationsSpecification(
+            Long clubId,
+            Long eventId,
+            RegistrationStatus registrationStatus,
+            EventStatus eventStatus,
+            String q,
+            EventTimeFilter timeFilter
+    ) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            Join<Object, Object> student = root.join("student");
+            List<Predicate> predicates = new ArrayList<>();
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+
+            if (clubId != null) {
+                predicates.add(cb.equal(club.get("id"), clubId));
+            }
+
+            if (eventId != null) {
+                predicates.add(cb.equal(event.get("id"), eventId));
+            }
+
+            if (registrationStatus != null) {
+                predicates.add(cb.equal(root.get("status"), registrationStatus));
+            }
+
+            if (eventStatus != null) {
+                predicates.add(cb.equal(event.get("status"), eventStatus));
+            }
+
+            applyTimeFilter(predicates, cb, event.get("startAt"), timeFilter);
+
+            if (q != null) {
+                String like = "%" + q.toLowerCase() + "%";
+                Expression<String> fullName = cb.lower(cb.concat(cb.concat(student.get("firstName"), " "), student.get("lastName")));
+                predicates.add(cb.or(
+                        cb.like(cb.lower(event.get("title")), like),
+                        cb.like(cb.lower(club.get("name")), like),
+                        cb.like(cb.lower(student.get("email")), like),
+                        cb.like(fullName, like)
+                ));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<EventRegistration> registrationByIdSpecification(Long eventId, Long studentId) {
+        return (root, query, cb) -> {
+            Join<Object, Object> event = root.join("event");
+            Join<Object, Object> club = event.join("club");
+            Join<Object, Object> student = root.join("student");
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(event.get("id"), eventId));
+            predicates.add(cb.equal(student.get("id"), studentId));
+            requireAvailableEvent(predicates, cb, event);
+            requireAvailableClub(predicates, cb, club);
+            requireAvailableUser(predicates, cb, student);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private void requireAvailableEvent(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> event
+    ) {
+        predicates.add(cb.isNotNull(event.get("id")));
+        predicates.add(cb.isNull(event.get("deletedAt")));
+    }
+
+    private void requireAvailableClub(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> club
+    ) {
+        predicates.add(cb.isNotNull(club.get("id")));
+        predicates.add(cb.isNull(club.get("deletedAt")));
+    }
+
+    private void requireAvailableUser(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            Join<Object, Object> user
+    ) {
+        predicates.add(cb.isNotNull(user.get("id")));
+        predicates.add(cb.isNull(user.get("deletedAt")));
     }
 
     private void applyTimeFilter(

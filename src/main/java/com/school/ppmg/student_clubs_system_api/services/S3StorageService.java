@@ -48,7 +48,7 @@ public class S3StorageService {
             S3Client s3Client,
             S3Presigner s3Presigner,
             @Value("${app.s3.bucket}") String bucket,
-            @Value("${app.s3.max-file-size-bytes:10485760}") long maxFileSizeBytes,
+            @Value("${app.s3.max-file-size-bytes:5242880}") long maxFileSizeBytes,
             @Value("${app.s3.get-url-ttl-minutes:60}") long getUrlTtlMinutes
     ) {
         this.s3Client = s3Client;

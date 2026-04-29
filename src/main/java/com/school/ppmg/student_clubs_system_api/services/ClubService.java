@@ -201,6 +201,26 @@ public class ClubService {
         return updateClubMainImage(getManagedClubOrThrow(id), file);
     }
 
+    @Transactional
+    public ClubDto addMedia(Long id, List<MultipartFile> files) {
+        return addClubMedia(getClubOrThrow(id), files);
+    }
+
+    @Transactional
+    public ClubDto addManagedMedia(Long id, List<MultipartFile> files) {
+        return addClubMedia(getManagedClubOrThrow(id), files);
+    }
+
+    @Transactional
+    public void removeMedia(Long id, Long mediaId) {
+        removeClubMedia(getClubOrThrow(id), mediaId);
+    }
+
+    @Transactional
+    public void removeManagedMedia(Long id, Long mediaId) {
+        removeClubMedia(getManagedClubOrThrow(id), mediaId);
+    }
+
     private ClubDto updateClub(Club club, ClubWriteRequest dto) {
         ensureNameIsAvailable(dto.name(), club.getId());
         applyUpsert(club, dto);
@@ -211,6 +231,36 @@ public class ClubService {
         String url = s3StorageService.upload(file, "clubs/" + club.getId() + "/main-image");
         club.setMainImageUrl(url);
         return toDto(clubRepository.save(club));
+    }
+
+    private ClubDto addClubMedia(Club club, List<MultipartFile> mediaFiles) {
+        List<MultipartFile> files = normalizeFiles(mediaFiles);
+        if (files.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Изберете поне едно изображение за качване");
+        }
+
+        List<String> uploadedUrls = new ArrayList<>();
+        try {
+            saveClubMedia(club, files, uploadedUrls);
+            return toDto(clubRepository.save(club));
+        } catch (RuntimeException ex) {
+            cleanupUploadedFiles(uploadedUrls);
+            throw ex;
+        }
+    }
+
+    private void removeClubMedia(Club club, Long mediaId) {
+        ClubMedia media = clubMediaRepository.findByIdAndClub_Id(mediaId, club.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Медия с id=" + mediaId + " не е намерена"));
+        String mediaUrl = media.getUrl();
+
+        clubMediaRepository.delete(media);
+
+        try {
+            s3StorageService.deleteByUrl(mediaUrl);
+        } catch (RuntimeException ignored) {
+            // Removing the database record is enough to hide the media from the club.
+        }
     }
 
     private Club getClubOrThrow(Long id) {
