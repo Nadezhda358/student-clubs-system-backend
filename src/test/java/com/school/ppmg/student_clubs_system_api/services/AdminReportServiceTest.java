@@ -1,6 +1,7 @@
 package com.school.ppmg.student_clubs_system_api.services;
 
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminEventsByPeriodDto;
+import com.school.ppmg.student_clubs_system_api.dtos.report.AdminClubParticipantsByClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminReportsOverviewDto;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import com.school.ppmg.student_clubs_system_api.enums.ReportPeriod;
@@ -74,6 +75,22 @@ class AdminReportServiceTest {
     }
 
     @Test
+    void getParticipantsByClubReturnsClubCounts() {
+        when(authService.getCurrentUser()).thenReturn(createUser(UserRole.ADMIN));
+        when(clubMembershipRepository.summarizeParticipantsByClub()).thenReturn(List.of(
+                clubParticipantRow(7L, "Роботика", true, 18L),
+                clubParticipantRow(8L, "Дебати", false, 9L)
+        ));
+
+        List<AdminClubParticipantsByClubDto> participants = adminReportService.getParticipantsByClub();
+
+        assertThat(participants).containsExactly(
+                new AdminClubParticipantsByClubDto(7L, "Роботика", true, 18L),
+                new AdminClubParticipantsByClubDto(8L, "Дебати", false, 9L)
+        );
+    }
+
+    @Test
     void getEventsByPeriodDefaultsToMonthWhenNoPeriodIsProvided() {
         OffsetDateTime from = OffsetDateTime.parse("2026-01-01T00:00:00+02:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-06-30T23:59:59+03:00");
@@ -130,6 +147,35 @@ class AdminReportServiceTest {
             @Override
             public Long getUniqueRegisteredParticipants() {
                 return uniqueParticipants;
+            }
+        };
+    }
+
+    private ClubMembershipRepository.ClubParticipantsByClubRow clubParticipantRow(
+            Long clubId,
+            String clubName,
+            Boolean active,
+            Long participantsCount
+    ) {
+        return new ClubMembershipRepository.ClubParticipantsByClubRow() {
+            @Override
+            public Long getClubId() {
+                return clubId;
+            }
+
+            @Override
+            public String getClubName() {
+                return clubName;
+            }
+
+            @Override
+            public Boolean getActive() {
+                return active;
+            }
+
+            @Override
+            public Long getParticipantsCount() {
+                return participantsCount;
             }
         };
     }

@@ -1,6 +1,7 @@
 package com.school.ppmg.student_clubs_system_api.controllers;
 
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminEventsByPeriodDto;
+import com.school.ppmg.student_clubs_system_api.dtos.report.AdminClubParticipantsByClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminReportsOverviewDto;
 import com.school.ppmg.student_clubs_system_api.enums.ReportPeriod;
 import com.school.ppmg.student_clubs_system_api.services.AdminReportService;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -35,5 +37,10 @@ public class AdminReportController {
             @RequestParam(required = false) ReportPeriod period
     ) {
         return adminReportService.getEventsByPeriod(from, to, period);
+    }
+
+    @GetMapping("/participants-by-club")
+    public List<AdminClubParticipantsByClubDto> getParticipantsByClub() {
+        return adminReportService.getParticipantsByClub();
     }
 }

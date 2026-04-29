@@ -2,6 +2,7 @@ package com.school.ppmg.student_clubs_system_api.services;
 
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminEventsByPeriodDto;
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminEventsByPeriodPointDto;
+import com.school.ppmg.student_clubs_system_api.dtos.report.AdminClubParticipantsByClubDto;
 import com.school.ppmg.student_clubs_system_api.dtos.report.AdminReportsOverviewDto;
 import com.school.ppmg.student_clubs_system_api.entities.user.User;
 import com.school.ppmg.student_clubs_system_api.enums.MembershipStatus;
@@ -50,6 +51,20 @@ public class AdminReportService {
                 from,
                 to
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminClubParticipantsByClubDto> getParticipantsByClub() {
+        requireAdmin();
+
+        return clubMembershipRepository.summarizeParticipantsByClub().stream()
+                .map(row -> new AdminClubParticipantsByClubDto(
+                        row.getClubId(),
+                        row.getClubName(),
+                        row.getActive(),
+                        valueOrZero(row.getParticipantsCount())
+                ))
+                .toList();
     }
 
     @Transactional(readOnly = true)
